@@ -6,6 +6,11 @@
 #                                   into /repo/manifest.json with absolute, per-request sourceUrls.
 #
 # Usage: ./pack-repo.sh [--version X.Y.Z.W] [--abi 10.11.0.0] [--out DIR] [--changelog TEXT]
+#                       [--base-url URL]
+#
+# With --base-url, also writes a fully static <out>/manifest.json whose sourceUrl is
+# <base-url>/<zip> — point Jellyfin's "custom repository" at that manifest.json to install without
+# running the Tubelet server (e.g. the committed jellyfin-repo/ served from raw.githubusercontent.com).
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -17,6 +22,8 @@ framework="net9.0"
 out="$here/repo"
 changelog="Initial release."
 guid="b7c0e5cc-2b6e-4f83-9c6e-3a1d47e05f10"
+description="Metadata, images and SponsorBlock media segments for a Tubelet library."
+base_url=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -24,6 +31,7 @@ while [[ $# -gt 0 ]]; do
     --abi)       target_abi="$2"; shift 2 ;;
     --out)       out="$2"; shift 2 ;;
     --changelog) changelog="$2"; shift 2 ;;
+    --base-url)  base_url="$2"; shift 2 ;;
     *) echo "unknown arg: $1" >&2; exit 1 ;;
   esac
 done
@@ -80,4 +88,33 @@ cat > "$out/versions.json" <<JSON
 JSON
 
 echo ">> wrote $out/versions.json"
-echo ">> done. Point Jellyfin at http://<tubelet-host>/repo/manifest.json"
+
+# Optional static manifest.json with an absolute sourceUrl — installable from a plain file host.
+if [[ -n "$base_url" ]]; then
+  source_url="${base_url%/}/$zip_name"
+  cat > "$out/manifest.json" <<JSON
+[
+  {
+    "guid": "$guid",
+    "name": "Tubelet",
+    "description": "$description",
+    "overview": "Tubelet for Jellyfin",
+    "owner": "tubelet",
+    "category": "Metadata",
+    "versions": [
+      {
+        "version": "$version",
+        "changelog": "$changelog",
+        "targetAbi": "$target_abi",
+        "sourceUrl": "$source_url",
+        "checksum": "$checksum",
+        "timestamp": "$timestamp"
+      }
+    ]
+  }
+]
+JSON
+  echo ">> wrote $out/manifest.json (sourceUrl $source_url)"
+fi
+
+echo ">> done. Point Jellyfin at http://<tubelet-host>/repo/manifest.json (or the static manifest.json)"

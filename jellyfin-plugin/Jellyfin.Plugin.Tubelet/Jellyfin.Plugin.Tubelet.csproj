@@ -1,8 +1,11 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <!-- Jellyfin.Controller 10.11 targets net9.0; the plugin ABI must match. -->
-    <TargetFramework>net9.0</TargetFramework>
+    <!-- Jellyfin.Controller 10.11 targets net9.0; the plugin ABI must match. Overridable (with the
+         package version below) so CI can build against the next-major preview, which targets net10.0
+         (dotnet build -p:PluginTargetFramework=net10.0 -p:JellyfinControllerVersion=12.0.*-*). -->
+    <PluginTargetFramework Condition="'$(PluginTargetFramework)' == ''">net9.0</PluginTargetFramework>
+    <TargetFramework>$(PluginTargetFramework)</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>Jellyfin.Plugin.Tubelet</AssemblyName>

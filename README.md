@@ -66,8 +66,14 @@ mapped GPU when present and always falls back to libx264.
 1. **Add the library.** In Jellyfin → *Dashboard → Libraries → Add*, create a **Shows** library
    pointing at the same path you mounted as `/youtube`. Disable its default metadata/image providers
    (Tubelet supplies them).
-2. **Add the plugin repo.** *Dashboard → Plugins → Repositories → Add*:
-   `http://<tubelet-host>:8000/repo/manifest.json`.
+2. **Add the plugin repo.** *Dashboard → Plugins → Repositories → Add*. Either:
+   - the running server (auto host-rewritten): `http://<tubelet-host>:8000/repo/manifest.json`, or
+   - the static repo hosted from this git repo (no Tubelet server needed to install):
+     `https://raw.githubusercontent.com/kekropp/tubelet/main/jellyfin-repo/manifest.json`.
+
+   > The static repo lives in [`jellyfin-repo/`](jellyfin-repo/) (manifest + zip). Regenerate it after
+   > a plugin change with
+   > `jellyfin-plugin/pack-repo.sh --out jellyfin-repo --base-url https://raw.githubusercontent.com/kekropp/tubelet/main/jellyfin-repo`.
 3. **Install Tubelet** from the catalog, then restart Jellyfin when prompted.
 4. **Point the plugin at the server.** *Plugins → Tubelet → Settings* → set the server URL
    (`http://<tubelet-host>:8000`).

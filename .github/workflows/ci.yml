@@ -69,11 +69,13 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
+      # The next-major preview (Jellyfin 12.x) targets net10.0, so the plugin TFM is bumped for this
+      # build only. A compile failure here is real ABI churn to react to — informational, not blocking.
       - name: Build against next-major preview ABI
         working-directory: jellyfin-plugin
         run: >-
           dotnet build Jellyfin.Plugin.Tubelet/Jellyfin.Plugin.Tubelet.csproj -c Release
-          -p:JellyfinControllerVersion=10.12.*-*
+          -p:PluginTargetFramework=net10.0 -p:JellyfinControllerVersion=12.0.*-*
 
   image:
     name: Docker image
