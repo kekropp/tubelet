@@ -35,6 +35,17 @@ public static partial class RetryPolicy
         RegexOptions.IgnoreCase)]
     private static partial Regex Permanent();
 
+    [GeneratedRegex(@"requested format( is)? not available|no video formats found|no formats found",
+        RegexOptions.IgnoreCase)]
+    private static partial Regex FormatUnavailable();
+
+    /// <summary>
+    /// True when the run failed because the <c>-f</c> selector matched nothing. The caller retries once
+    /// with <see cref="YtDlp.FallbackFormat"/> (grab-anything) and lets the postprocess transcode fix it.
+    /// </summary>
+    public static bool IsFormatUnavailable(string? stderr) =>
+        !string.IsNullOrEmpty(stderr) && FormatUnavailable().IsMatch(stderr);
+
     public static Failure Classify(int exitCode, string? stderr)
     {
         var text = stderr ?? "";

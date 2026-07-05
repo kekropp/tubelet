@@ -30,6 +30,17 @@ public class RetryPolicyTests
         Assert.Equal("ERROR: Private video", f.Reason);
     }
 
+    [Theory]
+    [InlineData("ERROR: [youtube] 0U1b_A-uhGw: Requested format is not available. Use --list-formats for a list of available formats", true)]
+    [InlineData("ERROR: [youtube] xxx: Requested format not available", true)]
+    [InlineData("ERROR: no video formats found!; please report this issue on ...", true)]
+    [InlineData("ERROR: [youtube] xxx: Private video. Sign in if you've been granted access", false)]
+    [InlineData("", false)]
+    public void Detects_format_unavailable(string stderr, bool expected)
+    {
+        Assert.Equal(expected, RetryPolicy.IsFormatUnavailable(stderr));
+    }
+
     [Fact]
     public void Backoff_grows_and_caps_at_60_min()
     {

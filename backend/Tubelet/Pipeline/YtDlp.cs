@@ -21,11 +21,13 @@ public sealed record VideoMeta(
     string RawJson);         // full infojson (gzip'd into videos.info_json)
 
 /// <summary>Per-download tuning pulled from Settings → Network/Quality (+ cookies if configured).</summary>
+/// <param name="FormatOverride">Replaces the default <c>-f</c> selector (see <see cref="YtDlp.FallbackFormat"/>);
+/// null uses <see cref="YtDlp.DefaultFormat"/>.</param>
 public sealed record DownloadArgs(
     int ConcurrentFragments, string? LimitRate, int SleepRequests, int SleepInterval,
     int MaxSleepInterval, string? CookiesFile,
     bool WriteSubs = false, string? SubLangs = null, bool EmbedThumbnail = false,
-    IReadOnlyList<string>? ExtraArgs = null);
+    IReadOnlyList<string>? ExtraArgs = null, string? FormatOverride = null);
 
 /// <summary>
 /// yt-dlp subprocess wrapper: single metadata call (-J → infojson) and a streaming download
@@ -34,6 +36,19 @@ public sealed record DownloadArgs(
 /// </summary>
 public sealed class YtDlp(YtDlpLocator locator, AppPaths paths)
 {
+    /// <summary>
+    /// Default format selector: prefer AVC video + m4a audio (direct-play, no transcode), else the best
+    /// separate video+audio of any codec, else the best pre-muxed stream.
+    /// </summary>
+    public const string DefaultFormat = "bestvideo[vcodec^=avc1]+bestaudio[ext=m4a]/bestvideo*+bestaudio/best";
+
+    /// <summary>
+    /// Permissive fallback for "Requested format is not available": grab whatever the extractor offers —
+    /// best separate video+audio, else best pre-muxed, else the single best stream even if it is
+    /// video-only or audio-only. The postprocess ffmpeg pass transcodes it into a valid Jellyfin mp4.
+    /// </summary>
+    public const string FallbackFormat = "bestvideo*+bestaudio/best/best*";
+
     /// <summary>The output template the download uses; the produced file is incomplete/&lt;id&gt;.&lt;ext&gt;.</summary>
     public string IncompleteTemplate => Path.Combine(paths.IncompleteDir, "%(id)s.%(ext)s");
 
@@ -78,7 +93,7 @@ public sealed class YtDlp(YtDlpLocator locator, AppPaths paths)
     {
         List<string> args =
         [
-            "-f", "bestvideo[vcodec^=avc1]+bestaudio[ext=m4a]/bestvideo*+bestaudio/best",
+            "-f", opt.FormatOverride ?? DefaultFormat,
             "--merge-output-format", "mp4",
             // Embed YouTube chapters as native mp4 chapter markers. Our postprocess remux uses -c copy,
             // which preserves container chapters, so they reach Jellyfin without a metadata provider.

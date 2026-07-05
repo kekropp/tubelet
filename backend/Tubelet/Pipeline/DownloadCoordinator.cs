@@ -120,7 +120,7 @@ public sealed class DownloadCoordinator(
 
             long lastBroadcast = 0;
             double lastPersisted = 0;
-            var result = await ytdlp.DownloadAsync(job.YoutubeId, args, p =>
+            void OnProgress(DownloadProgress p)
             {
                 if (p.Status != "downloading") return;
                 var now = Environment.TickCount64;
@@ -134,7 +134,18 @@ public sealed class DownloadCoordinator(
                     lastPersisted = p.Pct;
                     PersistProgress(job.Id, p.Pct);
                 }
-            }, ct).ConfigureAwait(false);
+            }
+
+            var result = await ytdlp.DownloadAsync(job.YoutubeId, args, OnProgress, ct).ConfigureAwait(false);
+
+            // Format-selection miss (e.g. no AVC/pre-muxed rendition): retry once grabbing whatever the
+            // extractor offers — the postprocess ffmpeg pass transcodes it into a valid mp4 (DESIGN §4.2).
+            if (result.ExitCode != 0 && RetryPolicy.IsFormatUnavailable(result.Stderr))
+            {
+                log.LogInformation("Requested format unavailable for {Yt} — retrying with grab-anything selector", job.YoutubeId);
+                result = await ytdlp.DownloadAsync(job.YoutubeId, args with { FormatOverride = YtDlp.FallbackFormat }, OnProgress, ct)
+                    .ConfigureAwait(false);
+            }
 
             if (result.ExitCode != 0) { HandleFailure(job, result.ExitCode, result.Stderr); return; }
 
