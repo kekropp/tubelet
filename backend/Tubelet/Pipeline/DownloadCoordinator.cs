@@ -177,43 +177,67 @@ public sealed class DownloadCoordinator(
         }
     }
 
-    /// <summary>Upsert the channel (+art on first sight), update the job's title, save the video thumb.</summary>
+    /// <summary>Upsert the channel (+page meta when new/incomplete), update the job's title, save the video thumb.</summary>
     private async Task<string?> HandleMeta(JobRow job, VideoMeta meta, CancellationToken ct)
     {
-        bool firstSight;
+        bool needsChannelMeta;
         using (var conn = db.Open())
         {
             conn.Execute("UPDATE jobs SET title = @title, channel_id = @cid WHERE id = @id",
                 new { title = meta.Title, cid = meta.ChannelId, id = job.Id });
             using var tx = conn.BeginTransaction();
-            firstSight = Queries.UpsertChannel(conn, tx, new ChannelRow
+            Queries.UpsertChannel(conn, tx, new ChannelRow
             {
                 ChannelId = meta.ChannelId,
                 Name = meta.ChannelName,
-                Description = "",
+                Description = "", // video infojsons never carry the channel description (see RefreshChannelMeta)
                 Tags = "[]",
                 LastRefresh = Now(),
             });
             tx.Commit();
+            // New channel, or an existing row still missing art/description (backfills old libraries).
+            needsChannelMeta = conn.ExecuteScalar<long>(
+                "SELECT count(*) FROM channels WHERE channel_id = @cid AND (thumb_path IS NULL OR description = '')",
+                new { cid = meta.ChannelId }) > 0;
         }
 
         var thumbRel = await art.SaveVideoThumbAsync(job.YoutubeId, meta.ThumbnailUrl, ct).ConfigureAwait(false);
 
-        if (firstSight)
-        {
-            var (t, b, tv) = await art.SaveChannelArtAsync(meta.ChannelId, meta.ChannelAvatarUrl, meta.ChannelBannerUrl, ct)
-                .ConfigureAwait(false);
-            if (t is not null || b is not null || tv is not null)
-                using (var conn = db.Open())
-                    conn.Execute("""
-                        UPDATE channels SET thumb_path = COALESCE(@t, thumb_path),
-                            banner_path = COALESCE(@b, banner_path), tvart_path = COALESCE(@tv, tvart_path)
-                        WHERE channel_id = @cid
-                        """, new { t, b, tv, cid = meta.ChannelId });
-            await BroadcastChannel(meta.ChannelId).ConfigureAwait(false);
-        }
+        if (needsChannelMeta) await RefreshChannelMeta(meta, ct).ConfigureAwait(false);
         BroadcastState(job.Id);
         return thumbRel;
+    }
+
+    /// <summary>
+    /// Fetch the channel page for description + avatar/banner (none of which exist in a video's
+    /// infojson) and store what came back. Best-effort: a failed page fetch falls back to whatever
+    /// the video infojson offered and never fails the download.
+    /// </summary>
+    private async Task RefreshChannelMeta(VideoMeta meta, CancellationToken ct)
+    {
+        var page = new ChannelPage(null, null, null);
+        try
+        {
+            page = await ytdlp.FetchChannelPageAsync(meta.ChannelId, CookiesFile(), PoTokenArgs(), ct).ConfigureAwait(false);
+        }
+        catch (Exception e) when (e is not OperationCanceledException)
+        {
+            log.LogWarning("channel page fetch failed for {Channel}: {Err}", meta.ChannelId, e.Message);
+        }
+
+        var (t, b, tv) = await art.SaveChannelArtAsync(meta.ChannelId,
+            page.AvatarUrl ?? meta.ChannelAvatarUrl, page.BannerUrl ?? meta.ChannelBannerUrl, ct).ConfigureAwait(false);
+
+        using (var conn = db.Open())
+            conn.Execute("""
+                UPDATE channels SET
+                    description = COALESCE(NULLIF(@d, ''), description),
+                    thumb_path  = COALESCE(@t, thumb_path),
+                    banner_path = COALESCE(@b, banner_path),
+                    tvart_path  = COALESCE(@tv, tvart_path)
+                WHERE channel_id = @cid
+                """, new { d = page.Description ?? "", t, b, tv, cid = meta.ChannelId });
+        await BroadcastChannel(meta.ChannelId).ConfigureAwait(false);
     }
 
     // ---- postprocess lane --------------------------------------------------

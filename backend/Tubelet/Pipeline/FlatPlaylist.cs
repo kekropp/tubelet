@@ -6,9 +6,11 @@ public sealed record FlatEntry(
     string Id, string? Title, string? ChannelId, string? ChannelName,
     long? DurationS = null, string? UploadDate = null);
 
-/// <summary>Parsed <c>yt-dlp --flat-playlist -J</c> output: the container + its flattened video entries.</summary>
+/// <summary>Parsed <c>yt-dlp --flat-playlist -J</c> output: the container + its flattened video entries.
+/// Avatar/banner come from the channel-tab root thumbnails (absent for regular playlists).</summary>
 public sealed record FlatListing(
-    string? Id, string? Title, string? ChannelId, string? ChannelName, string? Description, FlatEntry[] Entries);
+    string? Id, string? Title, string? ChannelId, string? ChannelName, string? Description, FlatEntry[] Entries,
+    string? AvatarUrl = null, string? BannerUrl = null);
 
 /// <summary>
 /// Parses flat-playlist JSON. Channels come back as nested tab playlists, so entries are
@@ -28,7 +30,19 @@ public static class FlatPlaylist
             ChannelId: Str(r, "channel_id") ?? Str(r, "uploader_id"),
             ChannelName: Str(r, "channel") ?? Str(r, "uploader"),
             Description: Str(r, "description"),
-            Entries: entries.ToArray());
+            Entries: entries.ToArray(),
+            AvatarUrl: ThumbById(r, "avatar_uncropped") ?? ThumbById(r, "avatar"),
+            BannerUrl: ThumbById(r, "banner_uncropped") ?? ThumbById(r, "banner"));
+    }
+
+    private static string? ThumbById(JsonElement r, string id)
+    {
+        if (!r.TryGetProperty("thumbnails", out var ts) || ts.ValueKind != JsonValueKind.Array) return null;
+        foreach (var t in ts.EnumerateArray())
+            if (t.ValueKind == JsonValueKind.Object
+                && t.TryGetProperty("id", out var i) && i.ValueKind == JsonValueKind.String && i.GetString() == id
+                && t.TryGetProperty("url", out var u) && u.ValueKind == JsonValueKind.String) return u.GetString();
+        return null;
     }
 
     private static void Collect(JsonElement node, List<FlatEntry> outp)

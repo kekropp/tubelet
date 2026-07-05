@@ -66,8 +66,9 @@ public static class Queries
     // ---- channels ----------------------------------------------------------
 
     /// <summary>
-    /// Insert or update a channel row. Art paths use COALESCE so a later refresh that lacks
-    /// art (e.g. a video infojson without banner) never wipes previously fetched images.
+    /// Insert or update a channel row. Art paths use COALESCE and description keeps its old value
+    /// unless the new one is non-empty, so a later refresh that lacks them (e.g. an upsert from a
+    /// video infojson, which never carries channel description/art) can't wipe fetched data.
     /// Returns true if the channel row did not exist before (first sight → fetch art).
     /// </summary>
     public static bool UpsertChannel(SqliteConnection conn, IDbTransaction tx, ChannelRow c)
@@ -78,7 +79,8 @@ public static class Queries
             INSERT INTO channels (channel_id, name, description, tags, thumb_path, banner_path, tvart_path, last_refresh)
             VALUES (@ChannelId, @Name, @Description, @Tags, @ThumbPath, @BannerPath, @TvartPath, @LastRefresh)
             ON CONFLICT(channel_id) DO UPDATE SET
-                name = excluded.name, description = excluded.description, tags = excluded.tags,
+                name = excluded.name, tags = excluded.tags,
+                description = COALESCE(NULLIF(excluded.description, ''), channels.description),
                 thumb_path  = COALESCE(excluded.thumb_path,  channels.thumb_path),
                 banner_path = COALESCE(excluded.banner_path, channels.banner_path),
                 tvart_path  = COALESCE(excluded.tvart_path,  channels.tvart_path),

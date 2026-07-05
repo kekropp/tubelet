@@ -14,7 +14,7 @@ namespace Tubelet.Scheduling;
 /// Shared by the <see cref="Scheduler"/> loop and the manual "scan now" endpoint.
 /// </summary>
 public sealed class SubscriptionScanner(
-    Database db, YtDlpLocator locator, RateGate rateGate, AppPaths paths,
+    Database db, YtDlpLocator locator, RateGate rateGate, AppPaths paths, MediaArt art,
     PipelineSignal signal, Broadcaster bc, ILogger<SubscriptionScanner> log)
 {
     /// <summary>Default window of recent uploads to inspect when the filter sets no max_items.</summary>
@@ -87,6 +87,16 @@ public sealed class SubscriptionScanner(
         }
 
         var listing = FlatPlaylist.Parse(r.Stdout);
+
+        // The channel-tab root JSON carries description + avatar/banner we already paid for —
+        // use it to backfill channel rows that are missing them (best-effort, never fails a scan).
+        if (kind == UrlKind.Channel)
+        {
+            try { await RefreshChannelMetaAsync(listing, ct); }
+            catch (Exception e) when (e is not OperationCanceledException)
+            { log.LogWarning(e, "subscription {Id}: channel meta refresh failed", sub.Id); }
+        }
+
         var enqueued = 0;
         using var conn = db.Open();
         if (kind == UrlKind.Playlist) Playlists.UpsertRegular(conn, sub.TargetId, listing);
@@ -101,6 +111,36 @@ public sealed class SubscriptionScanner(
 
         log.LogInformation("subscription {Id} ({Target}): enqueued {N} new video(s)", sub.Id, sub.TargetId, enqueued);
         return enqueued;
+    }
+
+    /// <summary>
+    /// Backfill a channel row's description/art from the scan's listing. Only touches rows that
+    /// exist (the row appears when its first video indexes) and are missing something.
+    /// </summary>
+    private async Task RefreshChannelMetaAsync(FlatListing listing, CancellationToken ct)
+    {
+        if (listing.ChannelId is null) return;
+
+        bool incomplete;
+        using (var conn = db.Open())
+            incomplete = conn.ExecuteScalar<long>(
+                "SELECT count(*) FROM channels WHERE channel_id = @cid AND (thumb_path IS NULL OR description = '')",
+                new { cid = listing.ChannelId }) > 0;
+        if (!incomplete) return;
+
+        var (t, b, tv) = await art.SaveChannelArtAsync(listing.ChannelId, listing.AvatarUrl, listing.BannerUrl, ct)
+            .ConfigureAwait(false);
+
+        using (var conn = db.Open())
+            conn.Execute("""
+                UPDATE channels SET
+                    description = COALESCE(NULLIF(@d, ''), description),
+                    thumb_path  = COALESCE(@t, thumb_path),
+                    banner_path = COALESCE(@b, banner_path),
+                    tvart_path  = COALESCE(@tv, tvart_path)
+                WHERE channel_id = @cid
+                """, new { d = listing.Description ?? "", t, b, tv, cid = listing.ChannelId });
+        log.LogInformation("backfilled channel meta for {Channel}", listing.ChannelId);
     }
 
     private IEnumerable<string> Args(SubscriptionRow sub, string url, int window)

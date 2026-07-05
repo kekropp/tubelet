@@ -20,6 +20,12 @@ public sealed record VideoMeta(
     string? ChannelBannerUrl,
     string RawJson);         // full infojson (gzip'd into videos.info_json)
 
+/// <summary>
+/// Channel-page metadata (description + avatar/banner URLs). These fields exist only in the
+/// channel-tab infojson — a video's infojson never carries them.
+/// </summary>
+public sealed record ChannelPage(string? Description, string? AvatarUrl, string? BannerUrl);
+
 /// <summary>Per-download tuning pulled from Settings → Network/Quality (+ cookies if configured).</summary>
 /// <param name="FormatOverride">Replaces the default <c>-f</c> selector (see <see cref="YtDlp.FallbackFormat"/>);
 /// null uses <see cref="YtDlp.DefaultFormat"/>.</param>
@@ -81,6 +87,36 @@ public sealed class YtDlp(YtDlpLocator locator, AppPaths paths)
         if (r.ExitCode != 0 || r.Stdout.Trim().Length == 0)
             throw new YtDlpException(r.ExitCode, r.Stderr);
         return ParseInfoJson(r.Stdout);
+    }
+
+    /// <summary>
+    /// Fetch a channel's page metadata: description and avatar/banner art URLs. Uses a flat-playlist
+    /// listing capped at one entry, so it costs a single page hit. Only the channel-tab root JSON
+    /// carries these fields; video infojsons never do.
+    /// </summary>
+    public async Task<ChannelPage> FetchChannelPageAsync(string channelId, string? cookiesFile,
+        IReadOnlyList<string>? extraArgs = null, CancellationToken ct = default)
+    {
+        List<string> args = ["-J", "--flat-playlist", "--playlist-end", "1", "--no-warnings"];
+        if (!string.IsNullOrEmpty(cookiesFile)) { args.Add("--cookies"); args.Add(cookiesFile); }
+        if (extraArgs is { Count: > 0 }) args.AddRange(extraArgs);
+        args.Add(YtSources.Channel(channelId));
+
+        var r = await Proc.RunAsync(locator.Path, args, ct).ConfigureAwait(false);
+        if (r.ExitCode != 0 || r.Stdout.Trim().Length == 0)
+            throw new YtDlpException(r.ExitCode, r.Stderr);
+        return ParseChannelPage(r.Stdout);
+    }
+
+    /// <summary>Parse the channel-tab root JSON into <see cref="ChannelPage"/>. Pure, for tests.</summary>
+    public static ChannelPage ParseChannelPage(string json)
+    {
+        using var doc = JsonDocument.Parse(json);
+        var r = doc.RootElement;
+        return new ChannelPage(
+            Description: Str(r, "description"),
+            AvatarUrl: ThumbById(r, "avatar_uncropped") ?? ThumbById(r, "avatar"),
+            BannerUrl: ThumbById(r, "banner_uncropped") ?? ThumbById(r, "banner"));
     }
 
     /// <summary>

@@ -236,6 +236,25 @@ public class InfoJsonTests
         Assert.Equal("2020-01-15T00:00:00Z", m.PublishedIso);
         Assert.Empty(m.Chapters);
     }
+
+    [Fact]
+    public void Parses_channel_page_description_and_art()
+    {
+        var p = YtDlp.ParseChannelPage("""
+            {"id":"UCxyz","description":"About",
+             "thumbnails":[
+                {"id":"avatar_uncropped","url":"https://a/avatar"},
+                {"id":"banner_uncropped","url":"https://a/banner"}
+             ]}
+            """);
+        Assert.Equal("About", p.Description);
+        Assert.Equal("https://a/avatar", p.AvatarUrl);
+        Assert.Equal("https://a/banner", p.BannerUrl);
+
+        var empty = YtDlp.ParseChannelPage("""{"id":"UCxyz"}""");
+        Assert.Null(empty.Description);
+        Assert.Null(empty.AvatarUrl);
+    }
 }
 
 public class FlatPlaylistTests
@@ -257,6 +276,29 @@ public class FlatPlaylistTests
         Assert.Equal("UCxyz", l.ChannelId);
         Assert.Equal(2, l.Entries.Length);          // 5-char id rejected (not 11)
         Assert.Equal("aaaaaaaaaaa", l.Entries[0].Id);
+    }
+
+    [Fact]
+    public void Parses_channel_root_avatar_and_banner()
+    {
+        var json = """
+        {"id":"UCxyz","title":"Chan - Videos","channel_id":"UCxyz","description":"About the channel",
+         "thumbnails":[
+            {"id":"0","url":"https://i.ytimg.com/0.jpg"},
+            {"id":"banner_uncropped","url":"https://yt3.googleusercontent.com/banner=w2120"},
+            {"id":"avatar_uncropped","url":"https://yt3.googleusercontent.com/avatar=s0"}
+         ],
+         "entries":[{"id":"aaaaaaaaaaa","title":"One"}]}
+        """;
+        var l = FlatPlaylist.Parse(json);
+        Assert.Equal("About the channel", l.Description);
+        Assert.Equal("https://yt3.googleusercontent.com/avatar=s0", l.AvatarUrl);
+        Assert.Equal("https://yt3.googleusercontent.com/banner=w2120", l.BannerUrl);
+
+        // Regular playlists have no avatar/banner thumbnails.
+        var pl = FlatPlaylist.Parse("""{"id":"PL123","title":"My List","entries":[]}""");
+        Assert.Null(pl.AvatarUrl);
+        Assert.Null(pl.BannerUrl);
     }
 
     [Fact]

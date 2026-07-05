@@ -11,7 +11,8 @@ namespace Jellyfin.Plugin.Tubelet.Providers;
 /// <summary>
 /// Video → Jellyfin Episode metadata. Identity is the filename stem (video id). Videos are
 /// grouped into year "seasons" (ParentIndexNumber = upload year); within a year they order
-/// chronologically by upload time (IndexNumber = minutes since the year's start).
+/// chronologically by PremiereDate. No IndexNumber is assigned — Jellyfin would render it as
+/// an "N." prefix on every episode title (the TubeArchivist plugin's default is the same).
 /// </summary>
 public sealed class EpisodeMetadataProvider : IRemoteMetadataProvider<Episode, EpisodeInfo>
 {
@@ -54,7 +55,6 @@ public sealed class EpisodeMetadataProvider : IRemoteMetadataProvider<Episode, E
             episode.PremiereDate = published;
             episode.ProductionYear = published.Year;
             episode.ParentIndexNumber = published.Year;          // year season
-            episode.IndexNumber = ChronoIndex(published);        // ordering within the year
         }
 
         result.HasMetadata = true;
@@ -85,12 +85,5 @@ public sealed class EpisodeMetadataProvider : IRemoteMetadataProvider<Episode, E
             return false;
         value = DateTime.SpecifyKind(value, DateTimeKind.Utc);
         return true;
-    }
-
-    /// <summary>Minutes since the year's start — a stable, chronological, per-year episode index.</summary>
-    private static int ChronoIndex(DateTime published)
-    {
-        var yearStart = new DateTime(published.Year, 1, 1, 0, 0, 0, DateTimeKind.Utc);
-        return (int)(published - yearStart).TotalMinutes + 1;
     }
 }
