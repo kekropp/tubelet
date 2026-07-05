@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- net9.0: consumed by the Jellyfin plugin (Jellyfin.Controller 10.11 targets net9.0).
+         net10.0: consumed by the server. Both frameworks ship System.Text.Json, so the
+         records' [JsonPropertyName] attributes need no external package — Contracts stays dep-free. -->
+    <TargetFrameworks>net9.0;net10.0</TargetFrameworks>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Description>Wire contract DTOs shared between the Tubelet server and the Jellyfin plugin.</Description>
+  </PropertyGroup>
+
+</Project>

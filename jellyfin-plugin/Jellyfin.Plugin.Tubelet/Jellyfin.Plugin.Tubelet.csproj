@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- Jellyfin.Controller 10.11 targets net9.0; the plugin ABI must match. -->
+    <TargetFramework>net9.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>Jellyfin.Plugin.Tubelet</AssemblyName>
+    <RootNamespace>Jellyfin.Plugin.Tubelet</RootNamespace>
+    <!-- Arch's dotnet-sdk package ships without prune-package data (NETSDK1226).
+         This dir is outside backend/, so it doesn't inherit backend/Directory.Build.props. -->
+    <AllowMissingPrunePackageData>true</AllowMissingPrunePackageData>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <Version>1.0.0.0</Version>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <!-- Overridable so CI can build against the next-major Jellyfin preview and catch ABI churn
+         (dotnet build -p:JellyfinControllerVersion=10.12.*-*). Default is the current stable ABI. -->
+    <JellyfinControllerVersion Condition="'$(JellyfinControllerVersion)' == ''">10.11.11</JellyfinControllerVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Provided by the Jellyfin host at runtime — never bundled into the plugin zip. -->
+    <PackageReference Include="Jellyfin.Controller" Version="$(JellyfinControllerVersion)">
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The shared wire contract. Zero-dep, net9.0 TFM; ships in the plugin zip. -->
+    <ProjectReference Include="..\..\backend\Tubelet.Contracts\Tubelet.Contracts.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Configuration\configPage.html" />
+  </ItemGroup>
+
+</Project>

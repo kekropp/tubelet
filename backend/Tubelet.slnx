@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="Tubelet.Contracts/Tubelet.Contracts.csproj" />
+  <Project Path="Tubelet.Tests/Tubelet.Tests.csproj" />
+  <Project Path="Tubelet/Tubelet.csproj" />
+</Solution>

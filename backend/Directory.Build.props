@@ -1,0 +1,6 @@
+<Project>
+  <PropertyGroup>
+    <!-- Arch's dotnet-sdk package ships without prune-package data (NETSDK1226). -->
+    <AllowMissingPrunePackageData>true</AllowMissingPrunePackageData>
+  </PropertyGroup>
+</Project>

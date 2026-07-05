@@ -1,0 +1,9 @@
+bin/
+obj/
+data/
+node_modules/
+dist/
+*.user
+.vs/
+.idea/
+wwwroot/

@@ -1,0 +1,23 @@
+# The whole Tubelet deployment. Add the same /youtube path to Jellyfin as a "Shows" library,
+# then install the Tubelet plugin from http://tubelet:8000/repo/manifest.json (see README).
+services:
+  tubelet:
+    # Prefer the published image; comment this out and uncomment `build: .` to build locally.
+    image: ghcr.io/kekropp/tubelet:latest
+    # build: .
+    ports:
+      - "8000:8000"
+    environment:
+      PUID: 1000
+      PGID: 1000
+    volumes:
+      - /srv/media/youtube:/youtube   # ← add this exact path to Jellyfin as a Shows library
+      - tubelet-cache:/cache          # db, thumbnails, cookies, .part files, backups, yt-dlp
+    restart: unless-stopped
+    # Hardware transcode (optional): map a GPU and set Settings → Quality → Hardware transcode.
+    # devices:
+    #   - /dev/dri:/dev/dri            # VAAPI / Intel QSV
+    # For NVENC, use the nvidia container runtime instead of a device mapping.
+
+volumes:
+  tubelet-cache:

@@ -1,0 +1,12 @@
+# Keep the build context small and reproducible — everything is rebuilt inside the image.
+**/bin
+**/obj
+**/node_modules
+**/data
+**/dist
+backend/Tubelet/wwwroot
+.git
+.github
+.idea
+.vs
+*.user
