@@ -43,7 +43,8 @@ stage_dir="$(mktemp -d)"
 trap 'rm -rf "$build_dir" "$stage_dir"' EXIT
 
 echo ">> building plugin ($framework, ABI $target_abi) v$version"
-dotnet publish "$project" -c Release -f "$framework" -o "$build_dir" --nologo -v q
+dotnet publish "$project" -c Release -f "$framework" -o "$build_dir" --nologo -v q \
+  "-p:Version=$version" "-p:AssemblyVersion=$version" "-p:FileVersion=$version"
 
 # The plugin package ships exactly the plugin assembly and its zero-dep contract; the
 # Jellyfin host provides everything else. meta.json lets Jellyfin identify the plugin.

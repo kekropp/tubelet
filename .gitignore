@@ -7,3 +7,7 @@ dist/
 .vs/
 .idea/
 wwwroot/
+# packed plugin repo output (built by pack-repo.sh / CI, published to a GitHub Release)
+dist-repo/
+jellyfin-repo/
+jellyfin-plugin/repo/

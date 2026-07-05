@@ -68,12 +68,13 @@ mapped GPU when present and always falls back to libx264.
    (Tubelet supplies them).
 2. **Add the plugin repo.** *Dashboard → Plugins → Repositories → Add*. Either:
    - the running server (auto host-rewritten): `http://<tubelet-host>:8000/repo/manifest.json`, or
-   - the static repo hosted from this git repo (no Tubelet server needed to install):
-     `https://raw.githubusercontent.com/kekropp/tubelet/main/jellyfin-repo/manifest.json`.
+   - the GitHub-hosted repo (no Tubelet server needed to install):
+     `https://github.com/kekropp/tubelet/releases/latest/download/manifest.json`.
 
-   > The static repo lives in [`jellyfin-repo/`](jellyfin-repo/) (manifest + zip). Regenerate it after
-   > a plugin change with
-   > `jellyfin-plugin/pack-repo.sh --out jellyfin-repo --base-url https://raw.githubusercontent.com/kekropp/tubelet/main/jellyfin-repo`.
+   > CI builds the plugin zip + manifest and attaches them to a GitHub Release when a `plugin-vX.Y.Z.W`
+   > tag is pushed (`git tag plugin-v1.0.0.0 && git push --tags`). The manifest's `sourceUrl` points at
+   > that release's zip asset, so nothing binary is committed to the repo. To pack it by hand:
+   > `jellyfin-plugin/pack-repo.sh --out dist-repo --base-url <url-where-the-zip-will-live>`.
 3. **Install Tubelet** from the catalog, then restart Jellyfin when prompted.
 4. **Point the plugin at the server.** *Plugins → Tubelet → Settings* → set the server URL
    (`http://<tubelet-host>:8000`).

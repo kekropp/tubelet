@@ -3,7 +3,7 @@ name: CI
 on:
   push:
     branches: [main]
-    tags: ['v*']
+    tags: ['v*', 'plugin-v*']   # v* → docker image; plugin-v* → Jellyfin plugin release
   pull_request:
 
 # Newer pushes to the same ref supersede in-flight runs.
@@ -81,6 +81,8 @@ jobs:
     name: Docker image
     runs-on: ubuntu-latest
     needs: [backend, frontend, plugin]
+    # Build on every push/PR; plugin-only tags don't produce an app image.
+    if: ${{ !startsWith(github.ref, 'refs/tags/plugin-v') }}
     permissions:
       contents: read
       packages: write   # push to GHCR
@@ -126,3 +128,34 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  plugin-release:
+    name: Publish plugin (Jellyfin repo)
+    runs-on: ubuntu-latest
+    needs: [plugin]
+    if: startsWith(github.ref, 'refs/tags/plugin-v')
+    permissions:
+      contents: write   # create the GitHub Release + upload assets
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Install zip
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends zip
+      # Build the plugin zip + a static manifest.json whose sourceUrl points at this release's asset,
+      # then attach both to the Release. Users add releases/latest/download/manifest.json as a repo.
+      - name: Pack and publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          ver="${GITHUB_REF_NAME#plugin-v}"                                   # plugin-v1.0.0.0 -> 1.0.0.0
+          base="https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}"
+          jellyfin-plugin/pack-repo.sh --out dist-repo --version "$ver" --abi 10.11.0.0 \
+            --changelog "Tubelet plugin ${ver}." --base-url "$base"
+          notes="Jellyfin plugin ${ver}. Add this repo in Jellyfin → Plugins → Repositories:
+          https://github.com/${GITHUB_REPOSITORY}/releases/latest/download/manifest.json"
+          gh release create "$GITHUB_REF_NAME" dist-repo/manifest.json dist-repo/tubelet_*.zip \
+            --title "Tubelet plugin ${ver}" --notes "$notes" \
+          || gh release upload "$GITHUB_REF_NAME" dist-repo/manifest.json dist-repo/tubelet_*.zip --clobber
