@@ -3,11 +3,13 @@ import { ref, computed } from 'vue'
 import { classify, chipLabel } from '../classify'
 import { api } from '../api'
 import { useQueue } from '../stores/queue'
+import AddDialog from './AddDialog.vue'
 
 const queue = useQueue()
 const url = ref('')
 const busy = ref(false)
 const flash = ref<{ ok: boolean; text: string } | null>(null)
+const dialogUrl = ref<string | null>(null)
 
 const cls = computed(() => classify(url.value))
 const chip = computed(() => chipLabel(cls.value))
@@ -15,8 +17,13 @@ const chip = computed(() => chipLabel(cls.value))
 async function submit() {
   const value = url.value.trim()
   if (!value || busy.value) return
-  busy.value = true
   flash.value = null
+  // Channels/playlists open the metadata-first chooser instead of downloading everything blindly.
+  if (cls.value.kind === 'channel' || cls.value.kind === 'playlist') {
+    dialogUrl.value = value
+    return
+  }
+  busy.value = true
   try {
     const r = await api.intake(value)
     flash.value = { ok: r.status === 'enqueued' || r.status === 'expanding', text: describe(r.status, r.kind) }
@@ -27,6 +34,13 @@ async function submit() {
   } finally {
     busy.value = false
   }
+}
+
+async function onDialogDone(msg: string) {
+  dialogUrl.value = null
+  url.value = ''
+  flash.value = { ok: true, text: msg }
+  await queue.refresh()
 }
 
 function describe(status: string, kind: string): string {
@@ -60,6 +74,8 @@ function describe(status: string, kind: string): string {
     </div>
     <p v-if="flash" class="flash" :class="{ ok: flash.ok, err: !flash.ok }">{{ flash.text }}</p>
     <p v-else class="hint">Everything you add downloads, converts, and lands in your Jellyfin library.</p>
+
+    <AddDialog v-if="dialogUrl" :url="dialogUrl" @close="dialogUrl = null" @done="onDialogDone" />
   </div>
 </template>
 

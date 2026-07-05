@@ -2,6 +2,7 @@ import type {
   IntakeResult, QueueDoc, PagedVideos, Video, ChannelSummary,
   Subscription, SubscriptionInput, PlaylistSummary,
   SystemInfo, CookieStatus, YtdlpUpdateResult, BackupResult,
+  ScopeInput, PreviewResult, PagedJobs, QueueFilter, QueueBulkRequest,
 } from './types'
 
 async function json<T>(resp: Response): Promise<T> {
@@ -26,14 +27,27 @@ function send(method: string, url: string, body?: unknown): Promise<Response> {
 }
 
 export const api = {
-  async intake(url: string): Promise<IntakeResult> {
-    const resp = await post('/api/v1/intake', { url })
+  async intake(url: string, scope?: ScopeInput): Promise<IntakeResult> {
+    const resp = await post('/api/v1/intake', { url, scope })
     // 422 for unrecognized input still carries an IntakeResult body.
     if (resp.status === 422) return resp.json()
     return json<IntakeResult>(resp)
   },
 
+  // Metadata-first look at a channel/playlist before choosing how much to download.
+  async preview(target: { url?: string; kind?: string; id?: string }): Promise<PreviewResult> {
+    return json<PreviewResult>(await post('/api/v1/intake/preview', target))
+  },
+
   queue: (): Promise<QueueDoc> => fetch('/api/v1/queue').then(json<QueueDoc>),
+
+  queueJobs(filter: QueueFilter, page: number, pageSize = 50): Promise<PagedJobs> {
+    const q = new URLSearchParams({ filter, page: String(page), page_size: String(pageSize) })
+    return fetch(`/api/v1/queue/jobs?${q}`).then(json<PagedJobs>)
+  },
+  queueBulk: (body: QueueBulkRequest): Promise<Response> => post('/api/v1/queue/bulk', body),
+  queuePause: () => post('/api/v1/queue/pause'),
+  queueResume: () => post('/api/v1/queue/resume'),
 
   retry: (id: number) => post(`/api/v1/queue/${id}/retry`),
   pause: (id: number) => post(`/api/v1/queue/${id}/pause`),
@@ -67,7 +81,8 @@ export const api = {
     send('PATCH', `/api/v1/subscriptions/${id}`, s).then(json<Subscription>),
   deleteSubscription: (id: number) => send('DELETE', `/api/v1/subscriptions/${id}`),
   scanSubscription: (id: number) => post(`/api/v1/subscriptions/${id}/scan`),
-  backlogSubscription: (id: number) => post(`/api/v1/subscriptions/${id}/backlog`),
+  backlogSubscription: (id: number, scope?: ScopeInput) =>
+    post(`/api/v1/subscriptions/${id}/backlog`, scope ?? {}),
 
   // ---- playlists --------------------------------------------------------
   playlists: (): Promise<PlaylistSummary[]> => fetch('/api/v1/playlists').then(json<PlaylistSummary[]>),

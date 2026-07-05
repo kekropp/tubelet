@@ -3,6 +3,7 @@ import { ref, reactive, onMounted, computed } from 'vue'
 import type { Subscription, ChannelSummary, SubscriptionInput } from '../types'
 import { api } from '../api'
 import { relTime } from '../format'
+import AddDialog from '../components/AddDialog.vue'
 
 const subs = ref<Subscription[]>([])
 const channels = ref<ChannelSummary[]>([])
@@ -10,10 +11,11 @@ const editing = ref<number | null>(null)
 const busyId = ref<number | null>(null)
 const flash = reactive<Record<number, string>>({})
 
-// Add form
-const form = reactive({ target_id: '', kind: 'channel' as 'channel' | 'playlist', cron: '0 */6 * * *' })
+// Add form — opens the metadata-first chooser (AddDialog) rather than subscribing blindly.
+const form = reactive({ target_id: '', kind: 'channel' as 'channel' | 'playlist' })
 const addError = ref('')
-const adding = ref(false)
+const addFlash = ref('')
+const dialogTarget = ref<{ kind: 'channel' | 'playlist'; id: string } | null>(null)
 
 const CRONS = [
   { v: '0 */6 * * *', label: 'Every 6 hours' },
@@ -32,17 +34,19 @@ async function load() {
 }
 onMounted(load)
 
-async function add() {
+function add() {
   addError.value = ''
+  addFlash.value = ''
   if (!form.target_id.trim()) { addError.value = 'Enter a channel/playlist URL or id.'; return }
-  adding.value = true
-  try {
-    const r = await api.createSubscription({ ...form, target_id: form.target_id.trim() })
-    if (r.status === 409) { addError.value = 'Already subscribed to that target.'; return }
-    if (!r.ok) { addError.value = 'Could not create subscription.'; return }
-    form.target_id = ''
-    await load()
-  } finally { adding.value = false }
+  dialogTarget.value = { kind: form.kind, id: form.target_id.trim() }
+}
+
+async function onDialogDone(msg: string) {
+  dialogTarget.value = null
+  form.target_id = ''
+  addFlash.value = msg
+  setTimeout(() => { addFlash.value = '' }, 6000)
+  await load()
 }
 
 async function toggle(s: Subscription) {
@@ -124,12 +128,13 @@ function nextLabel(s: Subscription): string {
       <input
         v-model="form.target_id" type="text" placeholder="Channel URL, @handle, UC… id, or playlist id"
         aria-label="Target" autocomplete="off" />
-      <select v-model="form.cron" aria-label="Check frequency">
-        <option v-for="c in CRONS" :key="c.v" :value="c.v">{{ c.label }}</option>
-      </select>
-      <button type="submit" :disabled="adding">Subscribe</button>
+      <button type="submit">Add…</button>
     </form>
     <p v-if="addError" class="err">{{ addError }}</p>
+    <p v-if="addFlash" class="flash">{{ addFlash }}</p>
+
+    <AddDialog v-if="dialogTarget" :kind="dialogTarget.kind" :id="dialogTarget.id"
+               @close="dialogTarget = null" @done="onDialogDone" />
 
     <p v-if="subs.length === 0" class="empty">
       No subscriptions yet. <span class="muted">Subscribe to a channel to auto-fetch new uploads.</span>

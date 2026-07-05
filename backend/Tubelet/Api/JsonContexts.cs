@@ -20,7 +20,13 @@ namespace Tubelet.Api;
 // frontend api
 [JsonSerializable(typeof(IntakeRequest))]
 [JsonSerializable(typeof(IntakeResult))]
+[JsonSerializable(typeof(ScopeRequest))]
+[JsonSerializable(typeof(PreviewRequest))]
+[JsonSerializable(typeof(PreviewResult))]
 [JsonSerializable(typeof(QueueDoc))]
+[JsonSerializable(typeof(PagedJobs))]
+[JsonSerializable(typeof(QueueBulkRequest))]
+[JsonSerializable(typeof(QueueBulkResult))]
 [JsonSerializable(typeof(JobDoc))]
 [JsonSerializable(typeof(JobDoc[]))]
 [JsonSerializable(typeof(PagedVideos))]

@@ -37,16 +37,57 @@ public static class IntakeEndpoints
                 }
 
                 case UrlKind.Playlist:
-                    expander.ExpandInBackground(UrlKind.Playlist, c.Id!, priority: 1);
+                    expander.ExpandInBackground(UrlKind.Playlist, c.Id!, priority: 1, ScopeOf(req));
                     return Results.Ok(new IntakeResult("playlist", c.Id, "expanding", [], []));
 
                 case UrlKind.Channel:
                 default:
-                    expander.ExpandInBackground(UrlKind.Channel, c.Id!, priority: 1);
+                    expander.ExpandInBackground(UrlKind.Channel, c.Id!, priority: 1, ScopeOf(req));
                     return Results.Ok(new IntakeResult("channel", c.Id, "expanding", [], []));
             }
         });
+
+        // Metadata-first preview: fetch the flat listing so the caller can choose how much of a
+        // channel/playlist to actually download (all / newest N / since a date / none). Videos and
+        // unrecognized input come straight back so the frontend can fall through to a normal intake.
+        app.MapPost("/api/v1/intake/preview", async (PreviewRequest req, IntakeExpander expander) =>
+        {
+            UrlKind kind;
+            string? id;
+            var explicitKind = (req.Kind ?? "").Trim().ToLowerInvariant();
+            if ((explicitKind == "channel" || explicitKind == "playlist") && !string.IsNullOrWhiteSpace(req.Id))
+            {
+                kind = explicitKind == "playlist" ? UrlKind.Playlist : UrlKind.Channel;
+                id = req.Id!.Trim();
+            }
+            else
+            {
+                var c = UrlClassifier.Classify(req.Url ?? "");
+                kind = c.Kind;
+                id = c.Id;
+            }
+
+            if (kind is UrlKind.Video or UrlKind.Unknown || id is null)
+                return Results.Ok(new PreviewResult(kind.ToString().ToLowerInvariant(), id, null, null, null, 0, false, []));
+
+            var (listing, error) = await expander.FetchListingAsync(kind, id, CancellationToken.None);
+            if (listing is null)
+                return Results.UnprocessableEntity(new { error });
+
+            var entries = listing.Entries;
+            var sample = entries.Take(8)
+                .Select(e => new PreviewEntry(e.Id, e.Title, e.UploadDate)).ToArray();
+            return Results.Ok(new PreviewResult(
+                kind.ToString().ToLowerInvariant(), id,
+                listing.Title, listing.ChannelId, listing.ChannelName,
+                entries.Length,
+                HasDates: entries.Any(e => e.UploadDate is { Length: 8 }),
+                Sample: sample));
+        });
     }
+
+    private static IntakeScope ScopeOf(IntakeRequest req)
+        => req.Scope is { } s ? IntakeScope.From(s.Mode, s.N, s.After) : IntakeScope.All;
 
     private static string StatusForSkip(Microsoft.Data.Sqlite.SqliteConnection conn, string id)
     {

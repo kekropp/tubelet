@@ -61,6 +61,13 @@ public sealed class DownloadCoordinator(
                     continue;
                 }
 
+                // Operator-toggled global pause: in-flight jobs run to completion, but claim nothing new.
+                if (QueuePaused())
+                {
+                    await signal.WaitAsync(PollInterval, ct).ConfigureAwait(false);
+                    continue;
+                }
+
                 while (Volatile.Read(ref _activeDownloads) < maxWorkers)
                 {
                     JobRow? job;
@@ -418,6 +425,12 @@ public sealed class DownloadCoordinator(
 
     private void ClearExtractorBreakage(SqliteConnection conn) =>
         Database.SetSetting(conn, "extract_fail_count", "0");
+
+    private bool QueuePaused()
+    {
+        using var conn = db.Open();
+        return Database.GetSetting(conn, "queue_paused") == "1";
+    }
 
     private TimeSpan CooldownRemaining()
     {

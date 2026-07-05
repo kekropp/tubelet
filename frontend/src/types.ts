@@ -27,6 +27,24 @@ export interface QueueDoc {
   active: Job[]
   recent: Job[]
   failed: Job[]
+  stats: QueueStats
+  paused: boolean
+}
+
+export interface PagedJobs {
+  items: Job[]
+  total: number
+  page: number
+  page_size: number
+}
+
+export type QueueFilter = 'active' | 'queued' | 'running' | 'failed' | 'done' | 'all'
+export type BulkAction = 'cancel' | 'pause' | 'resume' | 'retry' | 'priority'
+export interface QueueBulkRequest {
+  action: BulkAction
+  ids?: number[]
+  scope?: 'queued' | 'active' | 'failed' | 'all'
+  priority?: number
 }
 
 export interface QueueStats {
@@ -42,6 +60,26 @@ export interface IntakeResult {
   status: string
   enqueued: string[]
   skipped: string[]
+}
+
+// Backlog scope chosen after the metadata preview.
+export type ScopeMode = 'all' | 'newest' | 'after' | 'none'
+export interface ScopeInput {
+  mode: ScopeMode
+  n?: number       // for 'newest'
+  after?: string   // for 'after' — "YYYY-MM-DD" or "YYYYMMDD"
+}
+
+export interface PreviewEntry { id: string; title: string | null; upload_date: string | null }
+export interface PreviewResult {
+  kind: 'video' | 'playlist' | 'channel' | 'unknown'
+  id: string | null
+  title: string | null
+  channel_id: string | null
+  channel_name: string | null
+  video_count: number
+  has_dates: boolean
+  sample: PreviewEntry[]
 }
 
 // Live progress carried by the SignalR job.progress event.
@@ -129,6 +167,7 @@ export interface SystemInfo {
   cooldown_until: number | null
   video_count: number
   channel_count: number
+  paused: boolean
 }
 
 // Settings sections are stored as free-form JSON blobs; these mirror the backend option records.

@@ -6,7 +6,7 @@ namespace Tubelet.Api;
 // ApiJsonContext's naming policy — the shared plugin contract types live in
 // Tubelet.Contracts with explicitly pinned names.
 
-public sealed record IntakeRequest(string Url);
+public sealed record IntakeRequest(string Url, ScopeRequest? Scope = null);
 
 public sealed record IntakeResult(
     string Kind,          // video | playlist | channel | unknown
@@ -15,6 +15,26 @@ public sealed record IntakeResult(
     string[] Enqueued,
     string[] Skipped);
 
+// Backlog scope chosen after the metadata preview. mode: all | newest | after | none.
+// n applies to "newest"; after ("YYYY-MM-DD" or "YYYYMMDD") applies to "after".
+public sealed record ScopeRequest(string? Mode, int? N, string? After);
+
+// Metadata-first preview of a channel/playlist before deciding how much to download.
+// Either Url (an omnibox paste) or Kind+Id (an already-classified target) identifies the source.
+public sealed record PreviewRequest(string? Url, string? Kind, string? Id);
+
+public sealed record PreviewResult(
+    string Kind,          // video | playlist | channel | unknown
+    string? Id,
+    string? Title,
+    string? ChannelId,
+    string? ChannelName,
+    int VideoCount,
+    bool HasDates,        // whether YouTube exposed any per-video upload dates (→ "after date" is reliable)
+    PreviewEntry[] Sample);
+
+public sealed record PreviewEntry(string Id, string? Title, string? UploadDate);
+
 public sealed record JobDoc(
     long Id, string YoutubeId, string? ChannelId, string? Title, string State,
     int Priority, double Progress, int Attempts, int MaxAttempts,
@@ -22,7 +42,16 @@ public sealed record JobDoc(
     long AddedAt, long? StartedAt, long? FinishedAt, long? NextRetry,
     string? Thumb);
 
-public sealed record QueueDoc(JobDoc[] Active, JobDoc[] Recent, JobDoc[] Failed);
+public sealed record QueueDoc(JobDoc[] Active, JobDoc[] Recent, JobDoc[] Failed, QueueStatsDoc Stats, bool Paused);
+
+// Paginated slice of the queue for the management view.
+public sealed record PagedJobs(JobDoc[] Items, long Total, int Page, int PageSize);
+
+// Multi-item / global queue action. Either Ids (explicit selection) or Scope
+// ("queued" | "active" | "failed" | "all") targets the jobs; Priority is used by action "priority".
+public sealed record QueueBulkRequest(string Action, long[]? Ids, string? Scope, int? Priority);
+
+public sealed record QueueBulkResult(int Affected);
 
 public sealed record PagedVideos(VideoDoc[] Items, long Total, int Page, int PageSize);
 
@@ -37,7 +66,7 @@ public sealed record QueueStatsDoc(int Queued, int Running, int Failed, int Done
 public sealed record SystemDoc(
     string Version, string? YtdlpVersion,
     DiskDoc? Media, DiskDoc? Cache,
-    QueueStatsDoc Queue, long? CooldownUntil, long VideoCount, long ChannelCount);
+    QueueStatsDoc Queue, long? CooldownUntil, long VideoCount, long ChannelCount, bool Paused);
 
 // Cookie-jar status. The jar itself is write-only and never serialized back — only this metadata.
 public sealed record CookieStatusDoc(

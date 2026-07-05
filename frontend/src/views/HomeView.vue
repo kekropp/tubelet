@@ -1,12 +1,16 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useQueue } from '../stores/queue'
+import { go } from '../router'
 import { pct } from '../format'
 import Omnibox from '../components/Omnibox.vue'
 import QueueCard from '../components/QueueCard.vue'
 
 const queue = useQueue()
 const hasActive = computed(() => queue.active.length > 0)
+// Home is a dashboard; the server caps the active list. Use live stats for the true count.
+const queueCount = computed(() => Math.max(queue.active.length, queue.stats.queued + queue.stats.running))
+const hiddenCount = computed(() => Math.max(0, queueCount.value - queue.active.length))
 </script>
 
 <template>
@@ -14,8 +18,14 @@ const hasActive = computed(() => queue.active.length > 0)
 
   <main>
     <section v-if="hasActive">
-      <h2>Queue <span class="count">{{ queue.active.length }}</span></h2>
+      <h2>
+        Queue <span class="count">{{ queueCount }}</span>
+        <button class="manage" @click="go('queue')">Manage →</button>
+      </h2>
       <QueueCard v-for="j in queue.active" :key="j.id" :job="j" />
+      <button v-if="hiddenCount > 0" class="more" @click="go('queue')">
+        + {{ hiddenCount }} more in the queue — manage all →
+      </button>
     </section>
 
     <section v-else-if="queue.loaded && queue.recent.length === 0 && queue.failed.length === 0" class="empty">
@@ -48,6 +58,11 @@ h2 { font-size: 0.95rem; text-transform: uppercase; letter-spacing: 0.05em; colo
      margin: 1.6rem 0 0.8rem; display: flex; align-items: center; gap: 0.5rem; }
 .count { background: #24303a; color: var(--fg); border-radius: 20px; padding: 0.05rem 0.55rem; font-size: 0.8rem; }
 .count.danger { background: #3a1a1a; color: var(--danger); }
+.manage { margin-left: auto; background: none; border: 0; color: var(--accent); cursor: pointer;
+          font-size: 0.82rem; text-transform: none; letter-spacing: 0; }
+.more { width: 100%; background: var(--panel); border: 1px dashed var(--border); color: var(--accent);
+        border-radius: 9px; padding: 0.6rem; cursor: pointer; font-size: 0.88rem; margin-top: 0.2rem; }
+.more:hover { background: #14313f; }
 .empty { text-align: center; color: var(--muted); padding: 3rem 0; }
 .empty .muted { font-size: 0.9rem; margin-top: 0.3rem; }
 footer { display: flex; gap: 0.8rem; margin-top: 2rem; color: var(--muted); font-size: 0.85rem;

@@ -22,6 +22,14 @@ public sealed class Broadcaster(IHubContext<EventsHub> hub)
     public Task QueueStats(QueueStatsDoc stats) =>
         hub.Clients.All.SendAsync("queue.stats", stats);
 
+    /// <summary>Coordinator-wide pause toggled — clients reflect the paused banner/button.</summary>
+    public Task QueuePaused(bool paused) =>
+        hub.Clients.All.SendAsync("queue.paused", new { paused });
+
+    /// <summary>Queue membership changed in bulk — clients re-fetch rather than track each row.</summary>
+    public Task QueueInvalidated() =>
+        hub.Clients.All.SendAsync("queue.invalidated", new { });
+
     public Task SystemBanner(string kind, string message) =>
         hub.Clients.All.SendAsync("system.banner", new { kind, message });
 

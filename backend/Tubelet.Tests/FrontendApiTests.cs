@@ -66,6 +66,35 @@ public class FrontendApiTests(TubeletFactory factory) : IClassFixture<TubeletFac
     }
 
     [Fact]
+    public async Task Intake_accepts_a_scope_for_channels()
+    {
+        // Scope rides along; the channel still expands in the background (offline stub fails harmlessly).
+        var ch = await ReadJson(await _client.PostAsJsonAsync("/api/v1/intake",
+            new { url = "https://www.youtube.com/@RickAstleyYT", scope = new { mode = "newest", n = 5 } }));
+        Assert.Equal("channel", ch.GetProperty("kind").GetString());
+        Assert.Equal("expanding", ch.GetProperty("status").GetString());
+    }
+
+    [Fact]
+    public async Task Preview_returns_kind_for_a_bare_video_without_calling_ytdlp()
+    {
+        var body = await ReadJson(await _client.PostAsJsonAsync("/api/v1/intake/preview",
+            new { url = "https://youtu.be/abcdefghijk" }));
+        Assert.Equal("video", body.GetProperty("kind").GetString());
+        Assert.Equal(0, body.GetProperty("video_count").GetInt32());
+        Assert.Empty(body.GetProperty("sample").EnumerateArray());
+    }
+
+    [Fact]
+    public async Task Preview_of_a_channel_reports_the_listing_error_when_ytdlp_fails()
+    {
+        // The offline stub exits non-zero, so the preview surfaces a graceful 422 rather than throwing.
+        var resp = await _client.PostAsJsonAsync("/api/v1/intake/preview",
+            new { kind = "channel", id = "@RickAstleyYT" });
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, resp.StatusCode);
+    }
+
+    [Fact]
     public async Task Library_search_uses_fts_prefix_matching()
     {
         var resp = await ReadJson(await _client.GetAsync("/api/v1/videos?query=sqli"));
@@ -93,6 +122,53 @@ public class FrontendApiTests(TubeletFactory factory) : IClassFixture<TubeletFac
         var bumped = await ReadJson(await _client.PostAsJsonAsync(
             $"/api/v1/queue/{id}/priority", new { priority = 2 }));
         Assert.Equal(2, bumped.GetProperty("priority").GetInt32());
+    }
+
+    [Fact]
+    public async Task Queue_jobs_paginate()
+    {
+        var p1 = await ReadJson(await _client.GetAsync("/api/v1/queue/jobs?filter=all&page=1&page_size=2"));
+        Assert.True(p1.GetProperty("total").GetInt64() >= 3);   // fixtures seed 3 jobs
+        Assert.True(p1.GetProperty("items").GetArrayLength() <= 2);
+        Assert.Equal(2, p1.GetProperty("page_size").GetInt32());
+        Assert.Equal(1, p1.GetProperty("page").GetInt32());
+    }
+
+    [Fact]
+    public async Task Queue_global_pause_and_resume()
+    {
+        await _client.PostAsync("/api/v1/queue/pause", null);
+        Assert.True((await ReadJson(await _client.GetAsync("/api/v1/queue"))).GetProperty("paused").GetBoolean());
+        Assert.True((await ReadJson(await _client.GetAsync("/api/v1/system"))).GetProperty("paused").GetBoolean());
+
+        await _client.PostAsync("/api/v1/queue/resume", null);
+        Assert.False((await ReadJson(await _client.GetAsync("/api/v1/queue"))).GetProperty("paused").GetBoolean());
+    }
+
+    [Fact]
+    public async Task Queue_bulk_cancel_removes_selected_job()
+    {
+        // Enqueue a job of our own, then bulk-cancel it by id.
+        await _client.PostAsJsonAsync("/api/v1/intake", new { url = "https://youtu.be/bulkcancel1" });
+        var queue = await ReadJson(await _client.GetAsync("/api/v1/queue"));
+        var mine = queue.GetProperty("active").EnumerateArray()
+            .First(j => j.GetProperty("youtube_id").GetString() == "bulkcancel1");
+        var id = mine.GetProperty("id").GetInt64();
+
+        var res = await ReadJson(await _client.PostAsJsonAsync("/api/v1/queue/bulk",
+            new { action = "cancel", ids = new[] { id } }));
+        Assert.True(res.GetProperty("affected").GetInt32() >= 1);
+
+        var after = await ReadJson(await _client.GetAsync("/api/v1/queue"));
+        Assert.DoesNotContain(after.GetProperty("active").EnumerateArray(),
+            j => j.GetProperty("youtube_id").GetString() == "bulkcancel1");
+    }
+
+    [Fact]
+    public async Task Queue_bulk_rejects_missing_target()
+    {
+        var resp = await _client.PostAsJsonAsync("/api/v1/queue/bulk", new { action = "cancel" });
+        Assert.Equal(HttpStatusCode.BadRequest, resp.StatusCode);
     }
 
     [Fact]

@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, watch } from 'vue'
+import { computed, onMounted, onUnmounted, watch } from 'vue'
 import { useQueue } from './stores/queue'
 import { connectHub } from './signalr'
 import { route, go, type Route } from './router'
 import HomeView from './views/HomeView.vue'
+import QueueView from './views/QueueView.vue'
 import LibraryView from './views/LibraryView.vue'
 import ChannelsView from './views/ChannelsView.vue'
 import SettingsView from './views/SettingsView.vue'
@@ -21,13 +22,16 @@ watch(
   { immediate: true },
 )
 
-const views = { home: HomeView, library: LibraryView, channels: ChannelsView, settings: SettingsView }
+const views = { home: HomeView, queue: QueueView, library: LibraryView, channels: ChannelsView, settings: SettingsView }
 const nav: { r: Route; label: string }[] = [
   { r: 'home', label: 'Home' },
+  { r: 'queue', label: 'Queue' },
   { r: 'library', label: 'Library' },
   { r: 'channels', label: 'Channels' },
   { r: 'settings', label: 'Settings' },
 ]
+
+const queued = computed(() => queue.stats.queued + queue.stats.running)
 </script>
 
 <template>
@@ -35,11 +39,17 @@ const nav: { r: Route; label: string }[] = [
     <header>
       <h1 @click="go('home')">Tubelet</h1>
       <nav>
-        <button v-for="n in nav" :key="n.r" :class="{ on: route === n.r }" @click="go(n.r)">{{ n.label }}</button>
+        <button v-for="n in nav" :key="n.r" :class="{ on: route === n.r }" @click="go(n.r)">
+          {{ n.label }}<span v-if="n.r === 'queue' && queued" class="navbadge">{{ queued }}</span>
+        </button>
       </nav>
       <span class="spacer"></span>
       <span class="conn" :class="{ up: queue.connected }" :title="queue.connected ? 'Live' : 'Reconnecting…'"></span>
     </header>
+
+    <div v-if="queue.paused" class="banner paused" @click="go('queue')">
+      Queue paused — downloads won't start until you resume. <span class="dismiss">Manage →</span>
+    </div>
 
     <div v-if="queue.banner" class="banner" @click="queue.setBanner(null)">
       {{ queue.banner.message }} <span class="dismiss">✕</span>
@@ -66,6 +76,11 @@ nav button {
 }
 nav button:hover { color: var(--fg); background: var(--panel); }
 nav button.on { color: var(--accent); background: #14313f; }
+.navbadge {
+  margin-left: 0.4rem; background: #24303a; color: var(--fg); border-radius: 20px;
+  padding: 0.02rem 0.4rem; font-size: 0.72rem; vertical-align: middle;
+}
+nav button.on .navbadge { background: var(--accent); color: #04121c; }
 .spacer { flex: 1; }
 .conn { width: 9px; height: 9px; border-radius: 50%; background: var(--danger); transition: background 0.3s; flex: none; }
 .conn.up { background: #4ad07a; }
@@ -74,6 +89,7 @@ nav button.on { color: var(--accent); background: #14313f; }
   padding: 0.7rem 0.9rem; margin-bottom: 1rem; cursor: pointer; font-size: 0.9rem;
   display: flex; justify-content: space-between; align-items: center;
 }
+.banner.paused { background: #2a2140; border-color: #443a6a; color: #c3b3ff; }
 .dismiss { opacity: 0.6; }
 .scan {
   background: #12313f; border: 1px solid #1d4a5e; color: var(--accent); border-radius: 8px;

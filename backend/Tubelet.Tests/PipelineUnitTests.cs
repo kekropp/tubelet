@@ -342,6 +342,57 @@ public class MaintenanceOptionsTests
     }
 }
 
+public class IntakeScopeTests
+{
+    // Newest-first listing, like yt-dlp returns for a channel/playlist.
+    private static FlatEntry E(string id, string? date = null) => new(id, id, null, null, UploadDate: date);
+    private static readonly FlatEntry[] Listing =
+    [
+        E("a", "20260601"), E("b", "20260501"), E("c"), E("d", "20260101"), E("e", "20251201"),
+    ];
+
+    private static string[] Ids(IntakeScope s) => s.Slice(Listing).Select(x => x.Id).ToArray();
+
+    [Fact]
+    public void All_takes_everything()
+        => Assert.Equal(new[] { "a", "b", "c", "d", "e" }, Ids(IntakeScope.All));
+
+    [Fact]
+    public void None_takes_nothing()
+        => Assert.Empty(Ids(IntakeScope.From("none", null, null)));
+
+    [Fact]
+    public void Newest_takes_the_first_n()
+        => Assert.Equal(new[] { "a", "b" }, Ids(IntakeScope.From("newest", 2, null)));
+
+    [Fact]
+    public void Newest_without_a_count_falls_back_to_all()
+        => Assert.Equal(ScopeMode.All, IntakeScope.From("newest", null, null).Mode);
+
+    [Fact]
+    public void After_stops_at_the_first_entry_below_the_floor()
+        // Undated "c" sits above the floor cutoff so it's kept; "d"/"e" (dated before) are dropped.
+        => Assert.Equal(new[] { "a", "b", "c" }, Ids(IntakeScope.From("after", null, "2026-02-01")));
+
+    [Fact]
+    public void After_normalizes_dashed_and_plain_dates()
+    {
+        Assert.Equal("20260201", IntakeScope.From("after", null, "2026-02-01").DateFloor);
+        Assert.Equal("20260201", IntakeScope.From("after", null, "20260201").DateFloor);
+    }
+
+    [Fact]
+    public void After_with_a_bad_date_falls_back_to_all()
+        => Assert.Equal(ScopeMode.All, IntakeScope.From("after", null, "nonsense").Mode);
+
+    [Fact]
+    public void Unknown_or_blank_mode_is_all()
+    {
+        Assert.Equal(ScopeMode.All, IntakeScope.From(null, null, null).Mode);
+        Assert.Equal(ScopeMode.All, IntakeScope.From("wat", null, null).Mode);
+    }
+}
+
 public class FfmpegHwaccelTests
 {
     private static Ffmpeg Make(string? forced = null)

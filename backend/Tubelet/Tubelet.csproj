@@ -5,6 +5,8 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <InvariantGlobalization>false</InvariantGlobalization>
+    <!-- App version surfaced at /api/v1/system and in logs; keep in step with the v* release tag. -->
+    <Version>1.1.0</Version>
   </PropertyGroup>
 
   <ItemGroup>

@@ -1,4 +1,6 @@
 using Dapper;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Tubelet.Data;
 using Tubelet.Domain;
 using Tubelet.Pipeline;
@@ -124,15 +126,19 @@ public static class SubscriptionEndpoints
             return Results.Accepted($"/api/v1/subscriptions/{id}");
         });
 
-        // Fetch the entire backlog (whole listing, not just the recent window). Streams scan.progress.
-        g.MapPost("/{id:long}/backlog", (long id, Database db, IntakeExpander expander) =>
+        // Fetch the backlog. With no body it's the whole listing; an optional scope narrows it to the
+        // newest N or everything since a date (chosen after the add-time preview). Streams scan.progress.
+        g.MapPost("/{id:long}/backlog", (long id,
+            [FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] ScopeRequest? scope,
+            Database db, IntakeExpander expander) =>
         {
             using var conn = db.Open();
             var row = conn.QuerySingleOrDefault<SubscriptionRow>(
                 "SELECT * FROM subscriptions WHERE id = @id", new { id });
             if (row is null) return Results.NotFound();
             var kind = row.Kind == "playlist" ? UrlKind.Playlist : UrlKind.Channel;
-            expander.ExpandInBackground(kind, row.TargetId, SubscriptionScanner.SubscriptionPriority);
+            var s = scope is null ? IntakeScope.All : IntakeScope.From(scope.Mode, scope.N, scope.After);
+            expander.ExpandInBackground(kind, row.TargetId, SubscriptionScanner.SubscriptionPriority, s);
             return Results.Accepted($"/api/v1/subscriptions/{id}");
         });
     }

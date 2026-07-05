@@ -2,9 +2,9 @@ import { ref } from 'vue'
 
 // Tiny hash router — no dependency, no history plumbing. Views key off `route.value`.
 // The backend SPA fallback serves index.html for any path, so hash routing needs no server config.
-export type Route = 'home' | 'library' | 'channels' | 'settings'
+export type Route = 'home' | 'queue' | 'library' | 'channels' | 'settings'
 
-const routes: Route[] = ['home', 'library', 'channels', 'settings']
+const routes: Route[] = ['home', 'queue', 'library', 'channels', 'settings']
 
 function parse(): Route {
   const h = location.hash.replace(/^#\/?/, '').split('/')[0]

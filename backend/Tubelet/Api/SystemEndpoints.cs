@@ -29,7 +29,8 @@ public static partial class SystemEndpoints
                 Queue: new QueueStatsDoc(stats.Queued, stats.Running, stats.Failed, stats.Done),
                 CooldownUntil: long.TryParse(cooldownRaw, out var cd) && cd > DateTimeOffset.UtcNow.ToUnixTimeSeconds() ? cd : null,
                 VideoCount: counts.Videos,
-                ChannelCount: counts.Channels));
+                ChannelCount: counts.Channels,
+                Paused: Database.GetSetting(conn, "queue_paused") == "1"));
         });
 
         app.MapGet("/api/v1/settings/{section}", (string section, Database db) =>

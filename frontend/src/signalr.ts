@@ -14,6 +14,8 @@ export function connectHub(queue: ReturnType<typeof useQueue>) {
   conn.on('job.progress', (p: JobProgress) => queue.applyProgress(p))
   conn.on('job.state', (j: Job) => queue.applyJobState(j))
   conn.on('queue.stats', (s: QueueStats) => queue.applyStats(s))
+  conn.on('queue.paused', (p: { paused: boolean }) => queue.setPaused(p.paused))
+  conn.on('queue.invalidated', () => queue.invalidate())
   conn.on('video.added', () => { /* Home cares about the queue; Library (later) refetches. */ })
   conn.on('channel.added', () => {})
   conn.on('system.banner', (b: { kind: string; message: string }) => queue.setBanner(b))

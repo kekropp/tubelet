@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { api } from '../api'
-import type { Job, JobProgress, QueueStats } from '../types'
+import type { Job, JobProgress, QueueStats, QueueBulkRequest } from '../types'
 
 // Live per-job progress (from SignalR job.progress) — kept separate from the row's coarse
 // persisted progress so the bar animates smoothly without re-fetching.
@@ -20,6 +20,10 @@ export const useQueue = defineStore('queue', {
     scan: null as Scan | null,
     connected: false,
     loaded: false,
+    paused: false,
+    // Bumped whenever queue membership changes (job state transition / bulk op) so paginated
+    // views can re-fetch the current page without subscribing to every individual row.
+    rev: 0,
   }),
 
   getters: {
@@ -39,12 +43,20 @@ export const useQueue = defineStore('queue', {
       this.active = q.active
       this.recent = q.recent
       this.failed = q.failed
+      this.stats = q.stats
+      this.paused = q.paused
       this.loaded = true
     },
 
     applyStats(s: QueueStats) { this.stats = s },
+    setPaused(p: boolean) { this.paused = p },
+    invalidate() { this.rev++; void this.refresh() },
     setBanner(b: Banner | null) { this.banner = b },
-    setScan(s: Scan) { this.scan = s.done && s.enqueued === 0 && !s.message ? null : s },
+    setScan(s: Scan) {
+      this.scan = s.done && s.enqueued === 0 && !s.message ? null : s
+      // A finished scan/expansion just enqueued jobs that arrived via no per-row event — pull them in.
+      if (s.done && s.enqueued > 0) this.invalidate()
+    },
 
     applyProgress(p: JobProgress) {
       this.live[p.id] = { pct: p.pct, speed: p.speed, eta: p.eta }
@@ -60,6 +72,7 @@ export const useQueue = defineStore('queue', {
       else this.active.push(job)
       if (job.state === 'done' || job.state === 'failed') delete this.live[job.id]
       this.sortActive()
+      this.rev++
     },
 
     remove(id: number) {
@@ -76,5 +89,13 @@ export const useQueue = defineStore('queue', {
     async retry(id: number) { await api.retry(id); await this.refresh() },
     async cancel(id: number) { await api.cancel(id); this.remove(id) },
     async priority(id: number, p: number) { await api.priority(id, p) },
+
+    // ---- global / bulk queue management -----------------------------------
+    async pauseAll() { await api.queuePause(); this.paused = true },
+    async resumeAll() { await api.queueResume(); this.paused = false },
+    async bulk(body: QueueBulkRequest) {
+      await api.queueBulk(body)
+      await this.refresh() // membership changed broadly; resync the dashboard buckets
+    },
   },
 })

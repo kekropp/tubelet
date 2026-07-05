@@ -120,6 +120,22 @@ public static class Queries
     }
 
     /// <summary>
+    /// Baseline a "subscribe, only new from now on" choice: mark the current backlog ids as ignored so
+    /// intake/scanner skip them regardless of whether YouTube exposed upload dates. Ids already known
+    /// (archived / queued / already ignored) are left as-is. Returns how many ids are now on the skip list.
+    /// </summary>
+    public static int IgnoreExisting(SqliteConnection conn, IEnumerable<string> youtubeIds)
+    {
+        var ids = youtubeIds.Where(id => id is { Length: 11 }).Distinct().ToArray();
+        if (ids.Length == 0) return 0;
+        using var tx = conn.BeginTransaction();
+        var n = conn.Execute("INSERT OR IGNORE INTO ignored (youtube_id) VALUES (@id)",
+            ids.Select(id => new { id }), tx);
+        tx.Commit();
+        return n;
+    }
+
+    /// <summary>
     /// Atomically claim the next ready job (single UPDATE…RETURNING — SQLite serializes
     /// writers, so two concurrent claimants can never get the same row).
     /// </summary>
