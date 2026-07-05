@@ -36,6 +36,11 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+# Make --out absolute now: the zip step cd's into a temp dir, so a relative out path would resolve
+# against the wrong directory.
+mkdir -p "$out"
+out="$(cd "$out" && pwd)"
+
 timestamp="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 zip_name="tubelet_${version}.zip"
 build_dir="$(mktemp -d)"
