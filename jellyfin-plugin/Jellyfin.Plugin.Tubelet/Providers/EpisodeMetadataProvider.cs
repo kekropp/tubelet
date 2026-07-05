@@ -1,4 +1,5 @@
 using System.Globalization;
+using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Controller.Providers;
 using MediaBrowser.Model.Entities;
@@ -49,6 +50,12 @@ public sealed class EpisodeMetadataProvider : IRemoteMetadataProvider<Episode, E
             RunTimeTicks = video.DurationS > 0 ? video.DurationS * TimeSpan.TicksPerSecond : null,
         };
         episode.SetProviderId(Plugin.ProviderKey, videoId);
+
+        // Stamp the thumb directly (TubeArchivist-style) so it survives refreshes that skip the
+        // remote-image pass; the EpisodeImageProvider still serves alternatives.
+        var thumbUrl = _client.AbsoluteUrl(video.Thumb);
+        if (thumbUrl is not null)
+            episode.ImageInfos = [new ItemImageInfo { Path = thumbUrl, Type = ImageType.Primary }];
 
         if (TryParsePublished(video.Published, out var published))
         {

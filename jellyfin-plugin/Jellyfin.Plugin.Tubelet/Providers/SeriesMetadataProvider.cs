@@ -1,3 +1,4 @@
+using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Controller.Providers;
 using MediaBrowser.Model.Entities;
@@ -42,6 +43,12 @@ public sealed class SeriesMetadataProvider : IRemoteMetadataProvider<Series, Ser
             Tags = channel.Tags,
         };
         result.Item.SetProviderId(Plugin.ProviderKey, channelId);
+
+        // Stamp the poster directly on the item (like the TubeArchivist plugin does): it then shows
+        // up on any metadata refresh, without depending on a separate remote-image download pass.
+        var thumbUrl = _client.AbsoluteUrl(channel.Thumb);
+        if (thumbUrl is not null)
+            result.Item.ImageInfos = [new ItemImageInfo { Path = thumbUrl, Type = ImageType.Primary }];
         return result;
     }
 
