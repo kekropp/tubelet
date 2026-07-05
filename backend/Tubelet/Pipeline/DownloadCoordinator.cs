@@ -102,6 +102,7 @@ public sealed class DownloadCoordinator(
 
             SetState(job.Id, JobStates.Downloading);
             BroadcastState(job.Id);
+            log.LogInformation("Downloading {Yt} — {Title}", job.YoutubeId, meta.Title);
 
             var net = LoadNetwork();
             var quality = LoadQualityOptions();

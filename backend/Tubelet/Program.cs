@@ -1,4 +1,6 @@
 using Microsoft.Extensions.FileProviders;
+using Serilog;
+using Serilog.Events;
 using Tubelet;
 using Tubelet.Api;
 using Tubelet.Data;
@@ -8,6 +10,20 @@ using Tubelet.Scheduling;
 using Tubelet.Sponsorblock;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Serilog: one clean line per request, our own app logs at Information, and the noisy
+// ASP.NET Core middleware/hosting diagnostics dialed down to Warning. TUBELET_LOG_LEVEL
+// (Verbose|Debug|Information|Warning|Error) raises/lowers our own minimum.
+var appLevel = Enum.TryParse<LogEventLevel>(builder.Configuration["TUBELET_LOG_LEVEL"], true, out var lvl)
+    ? lvl : LogEventLevel.Information;
+builder.Host.UseSerilog((_, cfg) => cfg
+    .MinimumLevel.Is(appLevel)
+    .MinimumLevel.Override("Microsoft", LogEventLevel.Warning)          // kills per-request middleware spam
+    .MinimumLevel.Override("Microsoft.Hosting.Lifetime", LogEventLevel.Information)  // keep "Now listening on…"
+    .MinimumLevel.Override("System", LogEventLevel.Warning)
+    .Enrich.FromLogContext()
+    .WriteTo.Console(outputTemplate:
+        "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj}{NewLine}{Exception}"));
 
 var mediaDir = builder.Configuration["TUBELET_MEDIA"]
                ?? Path.Combine(builder.Environment.ContentRootPath, "data", "youtube");
@@ -68,6 +84,18 @@ if (int.TryParse(app.Configuration["TUBELET_FIXTURES_BULK"], out var bulk) && bu
     app.Logger.LogInformation("Bulk fixture catalog seeded ({Count} videos) for perf smoke test", bulk);
 }
 
+// One summary line per request. Errors/4xx surface at Warning+ (so a missing thumbnail is visible);
+// the /healthz probe is pushed to Debug so it doesn't flood the log every 30 s.
+app.UseSerilogRequestLogging(options =>
+{
+    options.MessageTemplate = "{RequestMethod} {RequestPath} → {StatusCode} in {Elapsed:0} ms";
+    options.GetLevel = (ctx, _, ex) =>
+        ex is not null || ctx.Response.StatusCode >= 500 ? LogEventLevel.Error
+        : ctx.Response.StatusCode >= 400 ? LogEventLevel.Warning
+        : ctx.Request.Path.StartsWithSegments("/healthz") ? LogEventLevel.Debug
+        : LogEventLevel.Information;
+});
+
 // Thumbnails/art: immutable content addressed by id — cache hard. ETags come free.
 app.UseStaticFiles(new StaticFileOptions
 {
@@ -114,6 +142,15 @@ else
         "Tubelet backend is running. Build the frontend (cd frontend && npm run build) to serve the web UI.",
         "text/plain"));
 }
+
+// Startup summary — a little context about how this instance is wired.
+var ytdlpVersion = await app.Services.GetRequiredService<YtDlpLocator>().VersionAsync();
+int workers;
+using (var conn = db.Open()) workers = NetworkOptions.Load(conn).DownloadWorkers!.Value;
+app.Logger.LogInformation(
+    "Tubelet ready · media={Media} · cache={Cache} · yt-dlp={Ytdlp} · workers={Workers} · fixtures={Fixtures}",
+    paths.MediaDir, paths.CacheDir, ytdlpVersion ?? "not found", workers,
+    app.Configuration["TUBELET_FIXTURES"] == "1");
 
 app.Run();
 

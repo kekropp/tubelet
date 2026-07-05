@@ -9,6 +9,7 @@
 
   <ItemGroup>
     <PackageReference Include="Cronos" Version="0.13.0" />
+    <PackageReference Include="Serilog.AspNetCore" Version="9.*" />
     <PackageReference Include="Dapper" Version="2.1.*" />
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.*" />
     <!-- lift the transitive native sqlite bundle past GHSA-2m69-gcr7-jv3q -->
