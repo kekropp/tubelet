@@ -37,6 +37,13 @@ public sealed class YtDlp(YtDlpLocator locator, AppPaths paths)
     /// <summary>The output template the download uses; the produced file is incomplete/&lt;id&gt;.&lt;ext&gt;.</summary>
     public string IncompleteTemplate => Path.Combine(paths.IncompleteDir, "%(id)s.%(ext)s");
 
+    /// <summary>
+    /// Canonical watch URL for a video id. yt-dlp must be handed a URL, not a bare id: YouTube ids
+    /// may begin with '-' (e.g. "--n1s8IoOuc"), which yt-dlp otherwise parses as a CLI option and
+    /// then aborts with "You must provide at least one URL".
+    /// </summary>
+    public static string WatchUrl(string id) => "https://www.youtube.com/watch?v=" + id;
+
     /// <summary>Locate the merged file yt-dlp produced for <paramref name="id"/> (prefers .mp4).</summary>
     public string? FindDownloaded(string id)
     {
@@ -53,7 +60,7 @@ public sealed class YtDlp(YtDlpLocator locator, AppPaths paths)
         List<string> args = ["-J", "--no-warnings", "--no-playlist"];
         if (!string.IsNullOrEmpty(cookiesFile)) { args.Add("--cookies"); args.Add(cookiesFile); }
         if (extraArgs is { Count: > 0 }) args.AddRange(extraArgs);
-        args.Add(id);
+        args.Add(WatchUrl(id));
 
         var r = await Proc.RunAsync(locator.Path, args, ct).ConfigureAwait(false);
         if (r.ExitCode != 0 || r.Stdout.Trim().Length == 0)
@@ -97,7 +104,7 @@ public sealed class YtDlp(YtDlpLocator locator, AppPaths paths)
         }
         if (opt.EmbedThumbnail) args.Add("--embed-thumbnail");
         if (opt.ExtraArgs is { Count: > 0 }) args.AddRange(opt.ExtraArgs);
-        args.Add(id);
+        args.Add(WatchUrl(id));
 
         return Proc.StreamAsync(locator.Path, args, line =>
         {

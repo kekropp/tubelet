@@ -49,7 +49,7 @@ public sealed class PipelineFactory : WebApplicationFactory<Program>
             args="$*"
             if [[ "$args" == *"--version"* ]]; then echo "2099.01.01"; exit 0; fi
             for last in "$@"; do :; done
-            id="$last"
+            id="${last##*v=}"   # the app now passes a https://www.youtube.com/watch?v=<id> URL
             if [[ "$args" == *"--progress-template"* ]]; then
               out=""; prev=""
               for a in "$@"; do [[ "$prev" == "-o" ]] && out="$a"; prev="$a"; done

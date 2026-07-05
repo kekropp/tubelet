@@ -142,6 +142,31 @@ public class SbClientTests
         Assert.Empty(SbClient.Parse("not json", "x", Cats, 100));
         Assert.Empty(SbClient.Parse("{}", "x", Cats, 100));
     }
+
+    [Fact]
+    public void Fetch_url_carries_all_categories()
+    {
+        // Regression: without ?categories the SponsorBlock API returns ONLY sponsor segments,
+        // silently dropping intro/outro/preview/etc.
+        var q = SbClient.CategoriesQuery(["sponsor", "outro", "preview"]);
+        Assert.StartsWith("?categories=", q);
+        var decoded = Uri.UnescapeDataString(q["?categories=".Length..]);
+        Assert.Equal("""["sponsor","outro","preview"]""", decoded);
+    }
+}
+
+public class YtDlpArgsTests
+{
+    [Theory]
+    [InlineData("--n1s8IoOuc")]  // real YouTube id that begins with '-'
+    [InlineData("-abc_def123")]
+    [InlineData("dQw4w9WgXcQ")]
+    public void WatchUrl_never_looks_like_a_cli_option(string id)
+    {
+        var url = YtDlp.WatchUrl(id);
+        Assert.Equal("https://www.youtube.com/watch?v=" + id, url);
+        Assert.StartsWith("https://", url);   // never begins with '-', so yt-dlp treats it as a URL
+    }
 }
 
 public class FfmpegPolicyTests

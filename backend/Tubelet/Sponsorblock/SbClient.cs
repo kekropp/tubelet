@@ -24,6 +24,16 @@ public sealed class SbClient(HttpClient http, IConfiguration config)
     public static string BuildUrl(string youtubeId) => DefaultEndpoint + HashPrefix(youtubeId);
 
     /// <summary>
+    /// The <c>?categories=[…]</c> query. REQUIRED: without it the SponsorBlock API defaults to
+    /// returning only <c>sponsor</c> segments, silently dropping intro/outro/preview/etc.
+    /// </summary>
+    public static string CategoriesQuery(IReadOnlyCollection<string> categories)
+    {
+        var arr = "[" + string.Join(",", categories.Select(c => "\"" + c + "\"")) + "]";
+        return "?categories=" + Uri.EscapeDataString(arr);
+    }
+
+    /// <summary>
     /// Filter a raw prefix-endpoint response to segments for <paramref name="youtubeId"/> whose
     /// category is configured, validate bounds against <paramref name="durationS"/>, and dedupe.
     /// Pure so it can be tested against canned responses.
@@ -67,7 +77,8 @@ public sealed class SbClient(HttpClient http, IConfiguration config)
     {
         try
         {
-            using var resp = await http.GetAsync(_endpoint + HashPrefix(youtubeId), ct).ConfigureAwait(false);
+            var url = _endpoint + HashPrefix(youtubeId) + CategoriesQuery(categories);
+            using var resp = await http.GetAsync(url, ct).ConfigureAwait(false);
             if (!resp.IsSuccessStatusCode) return [];
             var json = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
             return Parse(json, youtubeId, categories, durationS);
