@@ -12,6 +12,19 @@ public sealed record ProcResult(int ExitCode, string Stdout, string Stderr);
 /// </summary>
 public static class Proc
 {
+    /// <summary>Render a command line for logs (quotes args with spaces; copy-paste runnable).</summary>
+    public static string Render(string file, IEnumerable<string> args) =>
+        file + " " + string.Join(' ', args.Select(a =>
+            a.Length == 0 || a.Contains(' ') || a.Contains('"') ? "\"" + a.Replace("\"", "\\\"") + "\"" : a));
+
+    /// <summary>Last <paramref name="lines"/> non-empty lines of process output, for log tails.</summary>
+    public static string Tail(string? text, int lines)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return "(empty)";
+        var all = text.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        return string.Join('\n', all.Skip(Math.Max(0, all.Length - lines)));
+    }
+
     private static ProcessStartInfo Info(string file, IEnumerable<string> args)
     {
         var psi = new ProcessStartInfo

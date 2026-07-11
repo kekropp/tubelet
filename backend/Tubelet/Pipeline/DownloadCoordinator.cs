@@ -109,7 +109,8 @@ public sealed class DownloadCoordinator(
 
             SetState(job.Id, JobStates.Downloading);
             BroadcastState(job.Id);
-            log.LogInformation("Downloading {Yt} — {Title}", job.YoutubeId, meta.Title);
+            log.LogInformation("Downloading {Yt} — {Title} ({Duration}s, channel {Channel})",
+                job.YoutubeId, meta.Title, meta.DurationS, meta.ChannelId);
 
             var net = LoadNetwork();
             var quality = LoadQualityOptions();
@@ -134,6 +135,8 @@ public sealed class DownloadCoordinator(
                 {
                     lastPersisted = p.Pct;
                     PersistProgress(job.Id, p.Pct);
+                    log.LogDebug("{Yt} downloading: {Pct:P0} ({Speed}, ETA {Eta})",
+                        job.YoutubeId, p.Pct, p.SpeedText ?? "?", p.EtaText ?? "?");
                 }
             }
 
@@ -151,8 +154,18 @@ public sealed class DownloadCoordinator(
             if (result.ExitCode != 0) { HandleFailure(job, result.ExitCode, result.Stderr); return; }
 
             var input = ytdlp.FindDownloaded(job.YoutubeId);
-            if (input is null) { HandleFailure(job, 1, "yt-dlp reported success but produced no file"); return; }
+            if (input is null)
+            {
+                var leftovers = Directory.EnumerateFiles(paths.IncompleteDir, job.YoutubeId + ".*")
+                    .Select(Path.GetFileName).ToArray();
+                log.LogError("yt-dlp exited 0 for {Yt} but no merged file was found — incomplete/ contains: [{Files}]",
+                    job.YoutubeId, leftovers.Length > 0 ? string.Join(", ", leftovers) : "nothing for this id");
+                HandleFailure(job, 1, "yt-dlp reported success but produced no file");
+                return;
+            }
 
+            log.LogInformation("Downloaded {Yt} → {File} ({Size:N0} bytes); queueing for convert (postprocess backlog: {Backlog})",
+                job.YoutubeId, Path.GetFileName(input), new FileInfo(input).Length, _post.Reader.Count);
             SetState(job.Id, JobStates.Converting);
             BroadcastState(job.Id);
             await _post.Writer.WriteAsync(new PostItem(job, meta, input, thumbRel), CancellationToken.None).ConfigureAwait(false);
@@ -265,6 +278,7 @@ public sealed class DownloadCoordinator(
     private async Task PostProcess(PostItem item, CancellationToken ct)
     {
         var (job, meta, input, thumbRel) = item;
+        var sw = System.Diagnostics.Stopwatch.StartNew();
 
         var quality = LoadQualityOptions();
         var probe = await ffmpeg.ProbeAsync(input, ct).ConfigureAwait(false);
@@ -273,12 +287,17 @@ public sealed class DownloadCoordinator(
         var output = Path.Combine(paths.IncompleteDir, job.YoutubeId + ".final.mp4");
         // Keep/Remux with an embedded thumbnail: copy all streams so yt-dlp's cover art survives.
         var copyAll = quality.WantsThumbnail && plan != ConversionPlan.Transcode;
+        log.LogInformation(
+            "Converting {Yt}: input={File} container={Container} v={V} a={A} {W}x{H} dur={Dur:F1}s (expected {Expected}s) → plan={Plan} profile={Profile} hwaccel={Hw} copyAll={CopyAll}",
+            job.YoutubeId, Path.GetFileName(input), probe.Container, probe.Vcodec ?? "none", probe.Acodec ?? "none",
+            probe.Width, probe.Height, probe.DurationS, meta.DurationS, plan, quality.ResolvedProfile(), hwaccel, copyAll);
         await ffmpeg.ConvertAsync(input, output, plan, hwaccel, copyAll, ct).ConfigureAwait(false);
 
         if (!await ffmpeg.VerifyAsync(output, meta.DurationS, ct).ConfigureAwait(false))
         {
             TryDelete(output);
-            throw new InvalidOperationException("output failed ffprobe sanity check");
+            throw new InvalidOperationException(
+                $"output failed ffprobe sanity check (plan {plan}, expected ~{meta.DurationS}s — see 'verify … REJECTED' log line above for the reason)");
         }
         var final = await ffmpeg.ProbeAsync(output, ct).ConfigureAwait(false);
 
@@ -338,7 +357,8 @@ public sealed class DownloadCoordinator(
         BroadcastState(job.Id);
         await BroadcastQueueStats().ConfigureAwait(false);
         signal.Signal();
-        log.LogInformation("Indexed {Yt} → {Rel} ({Plan})", job.YoutubeId, rel, plan);
+        log.LogInformation("Indexed {Yt} → {Rel} ({Plan}, {Size:N0} bytes, v={V} a={A} {W}x{H}, postprocess took {Elapsed})",
+            job.YoutubeId, rel, plan, size, final.Vcodec, final.Acodec, final.Width, final.Height, sw.Elapsed);
     }
 
     // ---- failure handling --------------------------------------------------
@@ -347,6 +367,16 @@ public sealed class DownloadCoordinator(
     {
         var f = RetryPolicy.Classify(exitCode, stderr);
         var now = Now();
+
+        var willRetry = f.Kind == ErrorKind.Transient && job.Attempts < job.MaxAttempts;
+        log.LogWarning(
+            "Job {Id} ({Yt}) failed: kind={Kind} exit={Exit} attempt={Attempt}/{Max} → {Outcome} — {Reason}",
+            job.Id, job.YoutubeId, f.Kind, exitCode, job.Attempts, job.MaxAttempts,
+            f.Kind == ErrorKind.Throttled ? "queue cooldown" : willRetry ? "will retry" : "permanent failure",
+            f.Reason);
+        if (!string.IsNullOrWhiteSpace(stderr))
+            log.LogWarning("stderr tail for {Yt}:\n{Stderr}", job.YoutubeId, Proc.Tail(stderr, 15));
+
         using var conn = db.Open();
 
         NoteExtractorBreakage(conn, stderr);

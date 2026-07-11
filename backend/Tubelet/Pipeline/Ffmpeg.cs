@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
 
@@ -77,6 +78,8 @@ public sealed class Ffmpeg(IConfiguration config, ILogger<Ffmpeg>? log = null)
                 else if (type == "audio" && acodec is null) acodec = codec;
             }
 
+        log?.LogDebug("ffprobe {Path}: container={Container} v={V} a={A} {W}x{H} dur={Dur:F1}s",
+            path, container, vcodec ?? "none", acodec ?? "none", width, height, duration);
         return new ProbeResult(duration, vcodec, acodec, width, height, container);
     }
 
@@ -119,16 +122,40 @@ public sealed class Ffmpeg(IConfiguration config, ILogger<Ffmpeg>? log = null)
     {
         if (plan == ConversionPlan.Transcode && hwaccel != "none")
         {
-            var r = await Proc.RunAsync(FfmpegBin, TranscodeCmd(input, output, hwaccel), ct).ConfigureAwait(false);
-            if (r.ExitCode == 0) return;
-            log?.LogWarning("hwaccel {Hw} transcode failed ({Code}), falling back to libx264: {Err}",
-                hwaccel, r.ExitCode, r.Stderr.Trim());
+            var hwArgs = TranscodeCmd(input, output, hwaccel);
+            log?.LogInformation("ffmpeg {Plan} via {Hw}: {Cmd}", plan, hwaccel, Proc.Render(FfmpegBin, hwArgs));
+            var hwSw = Stopwatch.StartNew();
+            var r = await Proc.RunAsync(FfmpegBin, hwArgs, ct).ConfigureAwait(false);
+            if (r.ExitCode == 0)
+            {
+                log?.LogInformation("ffmpeg {Plan} via {Hw} done in {Elapsed} → {Output} ({Size:N0} bytes)",
+                    plan, hwaccel, hwSw.Elapsed, output, OutputSize(output));
+                return;
+            }
+            log?.LogWarning("hwaccel {Hw} transcode failed (exit {Code} after {Elapsed}), falling back to libx264 — stderr tail:\n{Err}",
+                hwaccel, r.ExitCode, hwSw.Elapsed, Proc.Tail(r.Stderr, 15));
             TryDeleteQuiet(output);
         }
 
-        var args = TranscodeCmd(input, output, plan == ConversionPlan.Transcode ? "none" : "copy", copyAllStreams);
+        var mode = plan == ConversionPlan.Transcode ? "none" : "copy";
+        var args = TranscodeCmd(input, output, mode, copyAllStreams);
+        log?.LogInformation("ffmpeg {Plan} ({Mode}): {Cmd}", plan, mode == "copy" ? "stream copy" : "libx264",
+            Proc.Render(FfmpegBin, args));
+        var sw = Stopwatch.StartNew();
         var res = await Proc.RunAsync(FfmpegBin, args, ct).ConfigureAwait(false);
-        if (res.ExitCode != 0) throw new InvalidOperationException($"ffmpeg convert failed ({res.ExitCode}): {res.Stderr}");
+        if (res.ExitCode != 0)
+        {
+            log?.LogError("ffmpeg {Plan} failed (exit {Code} after {Elapsed}) — stderr tail:\n{Err}",
+                plan, res.ExitCode, sw.Elapsed, Proc.Tail(res.Stderr, 15));
+            throw new InvalidOperationException($"ffmpeg convert failed ({res.ExitCode}): {Proc.Tail(res.Stderr, 5)}");
+        }
+        log?.LogInformation("ffmpeg {Plan} done in {Elapsed} → {Output} ({Size:N0} bytes)",
+            plan, sw.Elapsed, output, OutputSize(output));
+    }
+
+    private static long OutputSize(string path)
+    {
+        try { return new FileInfo(path).Length; } catch (IOException) { return -1; }
     }
 
     /// <summary>
@@ -184,12 +211,29 @@ public sealed class Ffmpeg(IConfiguration config, ILogger<Ffmpeg>? log = null)
     public async Task<bool> VerifyAsync(string path, double expectedDurationS, CancellationToken ct = default)
     {
         var probe = await ProbeAsync(path, ct).ConfigureAwait(false);
-        if (probe.Vcodec is null) return false;
-        if (expectedDurationS > 0 && Math.Abs(probe.DurationS - expectedDurationS) > 2) return false;
+        if (probe.Vcodec is null)
+        {
+            log?.LogWarning("verify {Path}: REJECTED — no video stream (container={Container}, a={A})",
+                path, probe.Container, probe.Acodec ?? "none");
+            return false;
+        }
+        if (expectedDurationS > 0 && Math.Abs(probe.DurationS - expectedDurationS) > 2)
+        {
+            log?.LogWarning("verify {Path}: REJECTED — duration {Actual:F1}s vs expected {Expected:F1}s (off by {Delta:F1}s, tolerance 2s)",
+                path, probe.DurationS, expectedDurationS, Math.Abs(probe.DurationS - expectedDurationS));
+            return false;
+        }
 
         var decode = await Proc.RunAsync(FfmpegBin,
             ["-v", "error", "-xerror", "-i", path, "-frames:v", "1", "-f", "null", "-"], ct).ConfigureAwait(false);
-        return decode.ExitCode == 0;
+        if (decode.ExitCode != 0)
+        {
+            log?.LogWarning("verify {Path}: REJECTED — first-frame decode failed (exit {Code}): {Err}",
+                path, decode.ExitCode, Proc.Tail(decode.Stderr, 5));
+            return false;
+        }
+        log?.LogDebug("verify {Path}: ok (v={V} a={A} dur={Dur:F1}s)", path, probe.Vcodec, probe.Acodec ?? "none", probe.DurationS);
+        return true;
     }
 
     // ---- images ------------------------------------------------------------

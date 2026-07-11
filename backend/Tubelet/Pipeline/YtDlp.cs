@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
 using Tubelet.Contracts;
@@ -40,7 +41,7 @@ public sealed record DownloadArgs(
 /// with the exact flags from DESIGN §4.2. Cancellation kills the process tree (Proc), so the
 /// .part file survives for --continue on the next attempt.
 /// </summary>
-public sealed class YtDlp(YtDlpLocator locator, AppPaths paths)
+public sealed class YtDlp(YtDlpLocator locator, AppPaths paths, ILogger<YtDlp>? log = null)
 {
     /// <summary>
     /// Default format selector: prefer AVC video + m4a audio (direct-play, no transcode), else the best
@@ -83,9 +84,16 @@ public sealed class YtDlp(YtDlpLocator locator, AppPaths paths)
         if (extraArgs is { Count: > 0 }) args.AddRange(extraArgs);
         args.Add(WatchUrl(id));
 
+        log?.LogDebug("yt-dlp meta {Id}: {Cmd}", id, Proc.Render(locator.Path, args));
+        var sw = Stopwatch.StartNew();
         var r = await Proc.RunAsync(locator.Path, args, ct).ConfigureAwait(false);
         if (r.ExitCode != 0 || r.Stdout.Trim().Length == 0)
+        {
+            log?.LogWarning("yt-dlp meta {Id} failed (exit {Code}, {Ms} ms, stdout {Bytes} bytes) — stderr tail:\n{Stderr}",
+                id, r.ExitCode, sw.ElapsedMilliseconds, r.Stdout.Length, Proc.Tail(r.Stderr, 10));
             throw new YtDlpException(r.ExitCode, r.Stderr);
+        }
+        log?.LogDebug("yt-dlp meta {Id} ok ({Ms} ms, {Bytes} bytes infojson)", id, sw.ElapsedMilliseconds, r.Stdout.Length);
         return ParseInfoJson(r.Stdout);
     }
 
@@ -124,7 +132,7 @@ public sealed class YtDlp(YtDlpLocator locator, AppPaths paths)
     /// <paramref name="onProgress"/> (unthrottled — the caller throttles before broadcasting).
     /// Returns the raw yt-dlp result; the caller classifies failures via <see cref="RetryPolicy"/>.
     /// </summary>
-    public Task<ProcResult> DownloadAsync(string id, DownloadArgs opt, Action<DownloadProgress> onProgress,
+    public async Task<ProcResult> DownloadAsync(string id, DownloadArgs opt, Action<DownloadProgress> onProgress,
         CancellationToken ct = default)
     {
         List<string> args =
@@ -157,10 +165,19 @@ public sealed class YtDlp(YtDlpLocator locator, AppPaths paths)
         if (opt.ExtraArgs is { Count: > 0 }) args.AddRange(opt.ExtraArgs);
         args.Add(WatchUrl(id));
 
-        return Proc.StreamAsync(locator.Path, args, line =>
+        log?.LogInformation("yt-dlp download {Id}: {Cmd}", id, Proc.Render(locator.Path, args));
+        var sw = Stopwatch.StartNew();
+        var r = await Proc.StreamAsync(locator.Path, args, line =>
         {
             if (YtDlpProgress.TryParse(line, out var p)) onProgress(p);
-        }, stderrRingLines: 50, ct: ct);
+        }, stderrRingLines: 50, ct: ct).ConfigureAwait(false);
+
+        if (r.ExitCode == 0)
+            log?.LogInformation("yt-dlp download {Id} finished (exit 0) in {Elapsed}", id, sw.Elapsed);
+        else
+            log?.LogWarning("yt-dlp download {Id} failed (exit {Code}) after {Elapsed} — stderr tail:\n{Stderr}",
+                id, r.ExitCode, sw.Elapsed, Proc.Tail(r.Stderr, 15));
+        return r;
     }
 
     /// <summary>
