@@ -100,7 +100,7 @@ public static class Queries
     /// of duplicated.
     /// </summary>
     public static bool EnqueueJob(SqliteConnection conn, string youtubeId, int priority,
-        string? channelId = null, string? title = null)
+        string? channelId = null, string? title = null, string? format = null)
     {
         var blocked = conn.ExecuteScalar<long>("""
             SELECT (SELECT count(*) FROM videos WHERE youtube_id = @youtubeId)
@@ -111,14 +111,15 @@ public static class Queries
 
         var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
         return conn.Execute("""
-            INSERT INTO jobs (youtube_id, channel_id, title, priority, added_at)
-            VALUES (@youtubeId, @channelId, @title, @priority, @now)
+            INSERT INTO jobs (youtube_id, channel_id, title, priority, format, added_at)
+            VALUES (@youtubeId, @channelId, @title, @priority, @format, @now)
             ON CONFLICT(youtube_id) DO UPDATE SET
-                state = 'queued', priority = @priority, attempts = 0, next_retry = NULL,
+                state = 'queued', priority = @priority, format = @format,
+                attempts = 0, next_retry = NULL,
                 last_error = NULL, error_kind = NULL, progress = 0,
                 started_at = NULL, finished_at = NULL
             WHERE jobs.state = 'failed'
-            """, new { youtubeId, channelId, title, priority, now }) > 0;
+            """, new { youtubeId, channelId, title, priority, format, now }) > 0;
     }
 
     /// <summary>

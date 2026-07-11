@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted, computed } from 'vue'
 import type { Subscription, ChannelSummary, SubscriptionInput } from '../types'
+import { FORMAT_PRESETS } from '../types'
 import { api } from '../api'
 import { relTime } from '../format'
 import AddDialog from '../components/AddDialog.vue'
@@ -75,8 +76,16 @@ async function remove(s: Subscription) {
 }
 
 // --- inline filter/cron editor ---
-const draft = reactive<{ cron: string; min_duration_min: number | null; title_regex: string; max_items: number | null }>(
-  { cron: '', min_duration_min: null, title_regex: '', max_items: null })
+const draft = reactive<{
+  cron: string; min_duration_min: number | null; title_regex: string; max_items: number | null
+  quality: string; custom_format: string
+}>({ cron: '', min_duration_min: null, title_regex: '', max_items: null, quality: 'default', custom_format: '' })
+
+// Per-subscription quality: 'default' follows Settings → Quality; 'custom:<-f string>' is a raw override.
+const QUALITY_CHOICES = [
+  { v: 'default', label: 'Default (global setting)' },
+  ...FORMAT_PRESETS,
+]
 
 function startEdit(s: Subscription) {
   editing.value = s.id
@@ -85,6 +94,13 @@ function startEdit(s: Subscription) {
   draft.min_duration_min = f.min_duration_s ? Math.round(f.min_duration_s / 60) : null
   draft.title_regex = f.title_regex ?? ''
   draft.max_items = f.max_items ?? null
+  if (s.quality_prof?.startsWith('custom:')) {
+    draft.quality = 'custom'
+    draft.custom_format = s.quality_prof.slice('custom:'.length)
+  } else {
+    draft.quality = s.quality_prof || 'default'
+    draft.custom_format = ''
+  }
 }
 function parseFilter(json: string | null): Record<string, any> {
   if (!json) return {}
@@ -98,6 +114,9 @@ async function saveEdit(s: Subscription) {
   const patch: SubscriptionInput = {
     cron: draft.cron,
     filter_json: Object.keys(filter).length ? JSON.stringify(filter) : '',
+    quality_prof: draft.quality === 'custom'
+      ? (draft.custom_format.trim() ? `custom:${draft.custom_format.trim()}` : 'default')
+      : draft.quality,
   }
   busyId.value = s.id
   try {
@@ -151,6 +170,8 @@ function nextLabel(s: Subscription): string {
               <span>· {{ nextLabel(s) }}</span>
               <span v-if="s.last_check">· checked {{ relTime(s.last_check) }}</span>
               <span v-if="s.filter_json" title="Has filters">· filtered</span>
+              <span v-if="s.quality_prof && s.quality_prof !== 'default'" title="Quality override">
+                · {{ s.quality_prof.startsWith('custom:') ? 'custom quality' : s.quality_prof }}</span>
             </div>
           </div>
           <div class="ops">
@@ -182,6 +203,15 @@ function nextLabel(s: Subscription): string {
           </label>
           <label>Max per check
             <input v-model.number="draft.max_items" type="number" min="1" placeholder="30" />
+          </label>
+          <label>Quality
+            <select v-model="draft.quality">
+              <option v-for="q in QUALITY_CHOICES" :key="q.v" :value="q.v">{{ q.label }}</option>
+            </select>
+          </label>
+          <label v-if="draft.quality === 'custom'" class="wide">Custom -f format string
+            <input v-model="draft.custom_format" type="text" spellcheck="false"
+                   placeholder="bestvideo[height<=1440]+bestaudio/best" />
           </label>
           <button class="save" :disabled="busyId === s.id" @click="saveEdit(s)">Save</button>
         </div>
@@ -236,6 +266,7 @@ function nextLabel(s: Subscription): string {
   margin-top: 0.8rem; padding-top: 0.8rem; border-top: 1px solid var(--border);
 }
 .editor label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.78rem; color: var(--muted); }
+.editor label.wide { grid-column: 1 / -1; }
 .editor input, .editor select {
   background: var(--bg); border: 1px solid var(--border); color: var(--fg); border-radius: 7px;
   padding: 0.4rem 0.5rem; font-size: 0.85rem;

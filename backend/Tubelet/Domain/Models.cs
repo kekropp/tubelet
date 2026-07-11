@@ -66,6 +66,7 @@ public sealed class JobRow
     public long? NextRetry { get; set; }
     public string? LastError { get; set; }
     public string? ErrorKind { get; set; }
+    public string? Format { get; set; }        // quality profile stamped at enqueue; NULL = global
     public double Progress { get; set; }
     public long AddedAt { get; set; }
     public long? StartedAt { get; set; }

@@ -295,6 +295,15 @@ postprocess lane — download of job B overlaps convert/index of job A.
 
    Progress JSON lines are parsed off stdout → throttled to 4 Hz → SignalR
    `job.progress {id, pct, speed, eta}`. stderr is ring-buffered for error display.
+
+   The `-f` selector above is the **directplay** preset (the default). Settings →
+   Quality exposes a `format_preset` chooser — `directplay` | `best` (any codec,
+   up to UHD) | `720p` (space saver) | `custom` (raw `-f` string in
+   `custom_format`). A subscription's `quality_prof` overrides the global choice
+   per channel/playlist (`default` = follow global, a preset key, or
+   `custom:<-f string>`); it is stamped onto `jobs.format` at enqueue time and
+   resolved at download time, so global changes apply to already-queued jobs
+   that don't carry an override.
 3. **converting** — see §4.4.
 4. **indexing** — atomic move `incomplete/<id>.mp4` → `/youtube/<channel_id>/<id>.mp4`
    (same filesystem = rename, instant), thumbnail → `/cache/videos/<c>/<id>.jpg`,

@@ -4,6 +4,7 @@ import type {
   NetworkSettings, QualitySettings, SbSettings, MaintenanceSettings,
   CookieStatus, SystemInfo,
 } from '../types'
+import { FORMAT_PRESETS } from '../types'
 import { api } from '../api'
 import { bytes, relTime } from '../format'
 
@@ -27,7 +28,7 @@ const net = reactive<NetworkSettings>({})
 async function saveNet() { await api.putSettings('network', clean(net)); flash('network') }
 
 // ---- quality -----------------------------------------------------------
-const quality = reactive<QualitySettings>({ profile: 'compat', hwaccel: 'auto' })
+const quality = reactive<QualitySettings>({ profile: 'compat', hwaccel: 'auto', format_preset: 'directplay' })
 async function saveQuality() { await api.putSettings('quality', clean(quality)); flash('quality') }
 
 // ---- sponsorblock ------------------------------------------------------
@@ -116,7 +117,7 @@ onMounted(async () => {
     api.getSettings<MaintenanceSettings>('maintenance').catch(() => ({}) as MaintenanceSettings),
   ])
   Object.assign(net, n)
-  Object.assign(quality, { profile: 'compat', hwaccel: 'auto', ...q })
+  Object.assign(quality, { profile: 'compat', hwaccel: 'auto', format_preset: 'directplay', ...q })
   if (sb.categories?.length) sbCats.value = new Set(sb.categories)
   if (sb.mapping) Object.assign(sbMap, sb.mapping)
   Object.assign(maint, m)
@@ -195,6 +196,15 @@ function clean<T extends Record<string, unknown>>(o: T): Partial<T> {
           <option value="compat">compat — transcode incompatible streams to h264</option>
           <option value="quality">quality — remux only, rely on client direct-play</option>
         </select>
+      </label>
+      <label class="row">Download quality
+        <select v-model="quality.format_preset">
+          <option v-for="p in FORMAT_PRESETS" :key="p.v" :value="p.v">{{ p.label }}</option>
+        </select>
+      </label>
+      <label v-if="quality.format_preset === 'custom'" class="row">Custom <code>-f</code> format string
+        <input v-model="quality.custom_format" type="text" spellcheck="false"
+               placeholder="bestvideo[height<=1440]+bestaudio/best" />
       </label>
       <label class="row">Hardware transcode
         <select v-model="quality.hwaccel">

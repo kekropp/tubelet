@@ -12,6 +12,8 @@ public static class Migrator
     private static readonly (long Version, Func<string> Sql)[] Migrations =
     [
         (1, ReadEmbeddedSchema),
+        // Per-job quality profile stamped at enqueue (subscription override); NULL = follow global settings.
+        (2, () => "ALTER TABLE jobs ADD COLUMN format TEXT"),
     ];
 
     public static void Migrate(Database db)

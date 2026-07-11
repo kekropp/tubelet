@@ -19,7 +19,7 @@ public class MigratorTests : IDisposable
         Migrator.Migrate(db); // second run is a no-op
 
         using var conn = db.Open();
-        Assert.Equal(1, conn.ExecuteScalar<long>("PRAGMA user_version"));
+        Assert.Equal(2, conn.ExecuteScalar<long>("PRAGMA user_version"));
         Assert.Equal(0, conn.ExecuteScalar<long>("SELECT count(*) FROM videos"));
         Assert.Equal(0, Database.CurrentSeq(conn));
         Assert.Equal("wal", conn.ExecuteScalar<string>("PRAGMA journal_mode"));
@@ -129,6 +129,21 @@ public class QueueTests : IDisposable
         Assert.Equal(0, job.Attempts);
         Assert.Equal(1, job.Priority);
         Assert.Null(job.LastError);
+    }
+
+    [Fact]
+    public void Enqueue_stamps_and_revive_restamps_the_format_profile()
+    {
+        using var conn = _db.Open();
+        Assert.True(Queries.EnqueueJob(conn, "fffffffffff", priority: 5, format: "720p"));
+        var job = conn.QuerySingle<Tubelet.Domain.JobRow>("SELECT * FROM jobs WHERE youtube_id = 'fffffffffff'");
+        Assert.Equal("720p", job.Format);
+
+        // A revived failed job takes the new enqueue's format (e.g. subscription setting changed).
+        conn.Execute("UPDATE jobs SET state = 'failed' WHERE youtube_id = 'fffffffffff'");
+        Assert.True(Queries.EnqueueJob(conn, "fffffffffff", priority: 5, format: "custom:bv*+ba/b"));
+        job = conn.QuerySingle<Tubelet.Domain.JobRow>("SELECT * FROM jobs WHERE youtube_id = 'fffffffffff'");
+        Assert.Equal("custom:bv*+ba/b", job.Format);
     }
 
     [Fact]

@@ -50,6 +50,57 @@ public sealed record NetworkOptions(
     }
 }
 
+/// <summary>
+/// yt-dlp -f selector presets. A "profile" is what settings/subscriptions store: a preset key,
+/// "default" (follow the global setting), or "custom:&lt;raw -f string&gt;".
+/// </summary>
+public static class FormatPresets
+{
+    public const string CustomPrefix = "custom:";
+
+    /// <summary>Preset key → -f selector. Unknown keys (incl. "default"/"custom") return null.</summary>
+    public static string? Selector(string? key) => key switch
+    {
+        // Current default behavior: best direct-play rendition (AVC+m4a, typically ≤1080p on YouTube).
+        "directplay" => YtDlp.DefaultFormat,
+        // Best available of any codec — grabs VP9/AV1 UHD; postprocess transcodes if profile=compat.
+        "best" => "bestvideo*+bestaudio/best",
+        // Space saver: ≤720p, direct-play preferred; final /best so a stream with nothing ≤720 still downloads.
+        "720p" => "bestvideo[vcodec^=avc1][height<=720]+bestaudio[ext=m4a]/bestvideo*[height<=720]+bestaudio/best[height<=720]/best",
+        _ => null,
+    };
+
+    /// <summary>True for values a subscription's quality_prof may hold.</summary>
+    public static bool IsValidProfile(string? profile) =>
+        string.IsNullOrWhiteSpace(profile) || profile == "default"
+        || Selector(profile) is not null
+        || (profile.StartsWith(CustomPrefix, StringComparison.Ordinal)
+            && profile.Length > CustomPrefix.Length
+            && !string.IsNullOrWhiteSpace(profile[CustomPrefix.Length..]));
+
+    /// <summary>
+    /// Resolve a job's stamped profile against the global quality settings. Precedence:
+    /// job custom &gt; job preset &gt; global (null/"default"/unknown fall through). Returns the
+    /// -f selector, or null for <see cref="YtDlp.DefaultFormat"/>.
+    /// </summary>
+    public static string? ResolveJobFormat(string? jobProfile, QualityOptions quality)
+    {
+        if (!string.IsNullOrWhiteSpace(jobProfile) && jobProfile != "default")
+        {
+            if (jobProfile.StartsWith(CustomPrefix, StringComparison.Ordinal))
+            {
+                var custom = jobProfile[CustomPrefix.Length..].Trim();
+                if (custom.Length > 0) return custom;
+            }
+            else if (Selector(jobProfile) is { } selector)
+            {
+                return selector;
+            }
+        }
+        return quality.ResolvedFormat();
+    }
+}
+
 /// <summary>Settings → Quality section (settings key "section:quality").</summary>
 public sealed record QualityOptions(
     [property: JsonPropertyName("profile")] string? Profile,
@@ -57,9 +108,21 @@ public sealed record QualityOptions(
     [property: JsonPropertyName("hwaccel")] string? Hwaccel = null,
     [property: JsonPropertyName("embed_subs")] bool? EmbedSubs = null,
     [property: JsonPropertyName("embed_thumbnail")] bool? EmbedThumbnail = null,
-    [property: JsonPropertyName("sub_langs")] string? SubLangs = null)
+    [property: JsonPropertyName("sub_langs")] string? SubLangs = null,
+    // Download quality: directplay (default) | best | 720p | custom (uses custom_format as the raw -f string).
+    [property: JsonPropertyName("format_preset")] string? FormatPreset = null,
+    [property: JsonPropertyName("custom_format")] string? CustomFormat = null)
 {
     public static readonly QualityOptions Defaults = new(Profile: "compat", Hwaccel: "auto");
+
+    /// <summary>
+    /// The globally configured -f selector, or null for <see cref="YtDlp.DefaultFormat"/>.
+    /// "custom" with a blank custom_format falls back to the default rather than breaking downloads.
+    /// </summary>
+    public string? ResolvedFormat() =>
+        FormatPreset == "custom" && !string.IsNullOrWhiteSpace(CustomFormat)
+            ? CustomFormat.Trim()
+            : FormatPresets.Selector(FormatPreset);
 
     /// <summary>compat = transcode incompatible streams; quality = remux only (rely on client direct-play).</summary>
     public string ResolvedProfile() =>

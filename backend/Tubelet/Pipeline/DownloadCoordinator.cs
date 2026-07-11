@@ -116,7 +116,8 @@ public sealed class DownloadCoordinator(
             var args = new DownloadArgs(net.ConcurrentFragments!.Value, net.LimitRate,
                 net.SleepRequests!.Value, net.SleepInterval!.Value, net.MaxSleepInterval!.Value, cookies,
                 WriteSubs: quality.WantsSubs, SubLangs: quality.ResolvedSubLangs(),
-                EmbedThumbnail: quality.WantsThumbnail, ExtraArgs: extra);
+                EmbedThumbnail: quality.WantsThumbnail, ExtraArgs: extra,
+                FormatOverride: FormatPresets.ResolveJobFormat(job.Format, quality));
 
             long lastBroadcast = 0;
             double lastPersisted = 0;

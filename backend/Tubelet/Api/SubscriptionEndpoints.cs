@@ -45,6 +45,8 @@ public static class SubscriptionEndpoints
             var cron = string.IsNullOrWhiteSpace(req.Cron) ? CronSchedule.Default : req.Cron.Trim();
             if (!CronSchedule.IsValid(cron))
                 return Results.BadRequest(new { error = "cron is not a valid cron expression" });
+            if (!FormatPresets.IsValidProfile(req.QualityProf))
+                return Results.BadRequest(new { error = "quality_prof must be 'default', a preset (directplay|best|720p), or 'custom:<-f string>'" });
 
             using var conn = db.Open();
             var exists = conn.ExecuteScalar<long>(
@@ -82,6 +84,8 @@ public static class SubscriptionEndpoints
                 if (!CronSchedule.IsValid(cron))
                     return Results.BadRequest(new { error = "cron is not a valid cron expression" });
             }
+            if (!FormatPresets.IsValidProfile(req.QualityProf))
+                return Results.BadRequest(new { error = "quality_prof must be 'default', a preset (directplay|best|720p), or 'custom:<-f string>'" });
             var enabled = req.Enabled ?? row.Enabled;
             // Recompute next_check when the cadence changed or the sub was just (re)enabled.
             var next = row.NextCheck;
@@ -138,7 +142,8 @@ public static class SubscriptionEndpoints
             if (row is null) return Results.NotFound();
             var kind = row.Kind == "playlist" ? UrlKind.Playlist : UrlKind.Channel;
             var s = scope is null ? IntakeScope.All : IntakeScope.From(scope.Mode, scope.N, scope.After);
-            expander.ExpandInBackground(kind, row.TargetId, SubscriptionScanner.SubscriptionPriority, s);
+            expander.ExpandInBackground(kind, row.TargetId, SubscriptionScanner.SubscriptionPriority, s,
+                SubscriptionScanner.JobFormat(row.QualityProf));
             return Results.Accepted($"/api/v1/subscriptions/{id}");
         });
     }

@@ -187,7 +187,17 @@ export interface QualitySettings {
   embed_subs?: boolean
   embed_thumbnail?: boolean
   sub_langs?: string
+  format_preset?: string   // directplay | best | 720p | custom
+  custom_format?: string   // raw yt-dlp -f string when format_preset = custom
 }
+
+// Download-quality preset choices shared by Settings and the subscription editor.
+export const FORMAT_PRESETS = [
+  { v: 'directplay', label: 'Direct play — best h264+aac (≈1080p, no transcode)' },
+  { v: 'best', label: 'Best available — up to 4K/8K, any codec' },
+  { v: '720p', label: 'Space saver — 720p max' },
+  { v: 'custom', label: 'Custom yt-dlp format string…' },
+] as const
 
 export interface SbSettings {
   categories?: string[]

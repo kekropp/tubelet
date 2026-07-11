@@ -61,6 +61,32 @@ public class SubscriptionApiTests(TubeletFactory factory) : IClassFixture<Tubele
     }
 
     [Fact]
+    public async Task Quality_profile_roundtrips_and_rejects_unknown_values()
+    {
+        var created = await _client.PostAsJsonAsync("/api/v1/subscriptions", new
+        {
+            kind = "channel",
+            target_id = "@QualityProfChannel",
+            quality_prof = "720p",
+        });
+        Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+        var doc = await Json(created);
+        var id = doc.GetProperty("id").GetInt64();
+        Assert.Equal("720p", doc.GetProperty("quality_prof").GetString());
+
+        var patched = await Json(await _client.PatchAsJsonAsync($"/api/v1/subscriptions/{id}",
+            new { quality_prof = "custom:bv*[height<=1440]+ba/b" }));
+        Assert.Equal("custom:bv*[height<=1440]+ba/b", patched.GetProperty("quality_prof").GetString());
+
+        Assert.Equal(HttpStatusCode.BadRequest, (await _client.PatchAsJsonAsync(
+            $"/api/v1/subscriptions/{id}", new { quality_prof = "1440p" })).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await _client.PostAsJsonAsync(
+            "/api/v1/subscriptions", new { kind = "channel", target_id = "@BadProf", quality_prof = "custom:" })).StatusCode);
+
+        await _client.DeleteAsync($"/api/v1/subscriptions/{id}");
+    }
+
+    [Fact]
     public async Task Duplicate_target_conflicts()
     {
         var body = new { kind = "channel", target_id = "@DuplicateTarget" };

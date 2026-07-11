@@ -15,10 +15,10 @@ public sealed class IntakeExpander(
     PipelineSignal signal, Broadcaster bc, ILogger<IntakeExpander> log)
 {
     /// <summary>Fire-and-forget expansion. Never throws to the caller (intake responds immediately).</summary>
-    public void ExpandInBackground(UrlKind kind, string id, int priority, IntakeScope? scope = null)
+    public void ExpandInBackground(UrlKind kind, string id, int priority, IntakeScope? scope = null, string? format = null)
         => _ = Task.Run(async () =>
         {
-            try { await ExpandAsync(kind, id, priority, scope ?? IntakeScope.All, CancellationToken.None); }
+            try { await ExpandAsync(kind, id, priority, scope ?? IntakeScope.All, CancellationToken.None, format); }
             catch (Exception e) { log.LogError(e, "expansion failed for {Kind} {Id}", kind, id); }
         });
 
@@ -42,7 +42,8 @@ public sealed class IntakeExpander(
         return (FlatPlaylist.Parse(r.Stdout), null);
     }
 
-    public async Task ExpandAsync(UrlKind kind, string id, int priority, IntakeScope scope, CancellationToken ct)
+    public async Task ExpandAsync(UrlKind kind, string id, int priority, IntakeScope scope, CancellationToken ct,
+        string? format = null)
     {
         await bc.ScanProgress(id, 0, 0, done: false, "Fetching listing…");
 
@@ -81,7 +82,7 @@ public sealed class IntakeExpander(
 
             foreach (var e in selected)
             {
-                if (Queries.EnqueueJob(conn, e.Id, priority, e.ChannelId ?? listing.ChannelId, e.Title))
+                if (Queries.EnqueueJob(conn, e.Id, priority, e.ChannelId ?? listing.ChannelId, e.Title, format))
                     enqueued++;
                 if (enqueued % 10 == 0)
                     await bc.ScanProgress(id, total, enqueued, done: false);

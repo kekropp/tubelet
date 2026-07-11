@@ -361,6 +361,58 @@ public class PipelineOptionsTests
         Assert.Equal(expected, new QualityOptions(Profile: "compat", Hwaccel: input).ResolvedHwaccel());
         Assert.Equal("en.*", new QualityOptions("compat").ResolvedSubLangs()); // default langs
     }
+
+    [Fact]
+    public void Global_format_preset_resolves_to_selector()
+    {
+        // Unset / directplay / unknown → null → YtDlp.DefaultFormat at the call site.
+        Assert.Null(new QualityOptions("compat").ResolvedFormat());
+        Assert.Equal(YtDlp.DefaultFormat, new QualityOptions("compat", FormatPreset: "directplay").ResolvedFormat());
+        Assert.Null(new QualityOptions("compat", FormatPreset: "bogus").ResolvedFormat());
+
+        Assert.Equal("bestvideo*+bestaudio/best",
+            new QualityOptions("compat", FormatPreset: "best").ResolvedFormat());
+        Assert.Contains("height<=720",
+            new QualityOptions("compat", FormatPreset: "720p").ResolvedFormat());
+
+        // Custom uses the raw -f string; a blank custom falls back to the default selector.
+        Assert.Equal("bv[height<=1440]+ba/b",
+            new QualityOptions("compat", FormatPreset: "custom", CustomFormat: " bv[height<=1440]+ba/b ").ResolvedFormat());
+        Assert.Null(new QualityOptions("compat", FormatPreset: "custom", CustomFormat: "  ").ResolvedFormat());
+    }
+
+    [Fact]
+    public void Job_format_overrides_global_and_falls_through_on_default()
+    {
+        var global = new QualityOptions("compat", FormatPreset: "best");
+
+        // Job stamp wins: preset key or custom:<-f string>.
+        Assert.Contains("height<=720", FormatPresets.ResolveJobFormat("720p", global));
+        Assert.Equal("bv*+ba/b", FormatPresets.ResolveJobFormat("custom:bv*+ba/b", global));
+
+        // null / "default" / unknown / blank-custom fall through to the global setting.
+        Assert.Equal("bestvideo*+bestaudio/best", FormatPresets.ResolveJobFormat(null, global));
+        Assert.Equal("bestvideo*+bestaudio/best", FormatPresets.ResolveJobFormat("default", global));
+        Assert.Equal("bestvideo*+bestaudio/best", FormatPresets.ResolveJobFormat("bogus", global));
+        Assert.Equal("bestvideo*+bestaudio/best", FormatPresets.ResolveJobFormat("custom:  ", global));
+
+        // And with no global override either, the resolved format is null (→ YtDlp.DefaultFormat).
+        Assert.Null(FormatPresets.ResolveJobFormat("default", new QualityOptions("compat")));
+    }
+
+    [Theory]
+    [InlineData(null, true)]
+    [InlineData("", true)]
+    [InlineData("default", true)]
+    [InlineData("directplay", true)]
+    [InlineData("best", true)]
+    [InlineData("720p", true)]
+    [InlineData("custom:bv+ba/b", true)]
+    [InlineData("custom:", false)]
+    [InlineData("custom:  ", false)]
+    [InlineData("1440p", false)]
+    public void Quality_profile_validation(string? profile, bool ok) =>
+        Assert.Equal(ok, FormatPresets.IsValidProfile(profile));
 }
 
 public class MaintenanceOptionsTests
