@@ -6,7 +6,9 @@ namespace Tubelet.Api;
 // ApiJsonContext's naming policy — the shared plugin contract types live in
 // Tubelet.Contracts with explicitly pinned names.
 
-public sealed record IntakeRequest(string Url, ScopeRequest? Scope = null);
+// Quality is an optional profile for the enqueued jobs: a preset key (directplay|best|720p)
+// or "custom:<-f string>"; null/"default" follows the global setting.
+public sealed record IntakeRequest(string Url, ScopeRequest? Scope = null, string? Quality = null);
 
 public sealed record IntakeResult(
     string Kind,          // video | playlist | channel | unknown

@@ -70,6 +70,10 @@ public static class FormatPresets
         _ => null,
     };
 
+    /// <summary>Profile → job format stamp: null when it just follows the global setting.</summary>
+    public static string? Normalize(string? profile) =>
+        string.IsNullOrWhiteSpace(profile) || profile == "default" ? null : profile;
+
     /// <summary>True for values a subscription's quality_prof may hold.</summary>
     public static bool IsValidProfile(string? profile) =>
         string.IsNullOrWhiteSpace(profile) || profile == "default"

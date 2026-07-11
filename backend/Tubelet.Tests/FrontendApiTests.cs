@@ -66,6 +66,28 @@ public class FrontendApiTests(TubeletFactory factory) : IClassFixture<TubeletFac
     }
 
     [Fact]
+    public async Task Intake_stamps_quality_onto_the_job_and_rejects_bad_profiles()
+    {
+        var resp = await _client.PostAsJsonAsync("/api/v1/intake",
+            new { url = "https://youtu.be/qqqqqqqqqqq", quality = "720p" });
+        var body = await ReadJson(resp);
+        Assert.Equal("enqueued", body.GetProperty("status").GetString());
+
+        // The stamp isn't exposed via the API; check the row directly.
+        var db = new Tubelet.Data.Database(Path.Combine(factory.Root, "cache", "tubelet.db"));
+        using (var conn = db.Open())
+        {
+            var format = Dapper.SqlMapper.ExecuteScalar<string?>(conn,
+                "SELECT format FROM jobs WHERE youtube_id = 'qqqqqqqqqqq'");
+            Assert.Equal("720p", format);
+        }
+
+        var bad = await _client.PostAsJsonAsync("/api/v1/intake",
+            new { url = "https://youtu.be/rrrrrrrrrrr", quality = "potato" });
+        Assert.Equal(HttpStatusCode.BadRequest, bad.StatusCode);
+    }
+
+    [Fact]
     public async Task Intake_accepts_a_scope_for_channels()
     {
         // Scope rides along; the channel still expands in the background (offline stub fails harmlessly).

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from 'vue'
 import type { PreviewResult, ScopeMode, ScopeInput } from '../types'
+import { FORMAT_PRESETS } from '../types'
 import { api } from '../api'
 
 // Opened for a channel/playlist add. Either `url` (an omnibox paste) or `kind`+`id`
@@ -27,7 +28,22 @@ const choice = reactive({
   after: '',
   subscribe: true,
   cron: '0 */6 * * *',
+  quality: 'default',
+  customFormat: '',
 })
+
+// 'default' follows Settings → Quality; applies to the initial backlog AND (when subscribed) future uploads.
+const QUALITY_CHOICES = [
+  { v: 'default', label: 'Default quality (global setting)' },
+  ...FORMAT_PRESETS,
+]
+
+// The profile string the backend stores/stamps: preset key or custom:<-f string>.
+function qualityProf(): string {
+  if (choice.quality !== 'custom') return choice.quality
+  const f = choice.customFormat.trim()
+  return f ? `custom:${f}` : 'default'
+}
 
 onMounted(async () => {
   try {
@@ -89,6 +105,7 @@ async function confirm() {
         kind: p.kind as 'channel' | 'playlist',
         target_id: p.id,
         cron: choice.cron,
+        quality_prof: qualityProf(),
         filter_json: Object.keys(filter).length ? JSON.stringify(filter) : '',
       })
       if (r.status === 409) { submitError.value = 'Already subscribed to that target.'; return }
@@ -99,7 +116,8 @@ async function confirm() {
       emit('done', subscribeMsg())
     } else {
       const paste = props.url && props.url.trim().length ? props.url.trim() : buildUrl(p.kind, p.id)
-      await api.intake(paste, scope)
+      const prof = qualityProf()
+      await api.intake(paste, scope, prof === 'default' ? undefined : prof)
       emit('done', 'Fetching your selection — new videos will appear in the queue.')
     }
   } catch (e) {
@@ -203,6 +221,18 @@ function fmtDate(d: string | null): string {
           </select>
         </div>
 
+        <div class="quality-row">
+          <label class="q-label">Quality
+            <select v-model="choice.quality" aria-label="Download quality">
+              <option v-for="q in QUALITY_CHOICES" :key="q.v" :value="q.v">{{ q.label }}</option>
+            </select>
+          </label>
+          <input v-if="choice.quality === 'custom'" v-model="choice.customFormat" type="text"
+                 class="q-custom" spellcheck="false" aria-label="Custom yt-dlp format string"
+                 placeholder="bestvideo[height<=1440]+bestaudio/best" />
+          <p v-if="choice.subscribe" class="q-hint">Applies to these videos and to future uploads from this {{ preview!.kind }}.</p>
+        </div>
+
         <details v-if="preview!.sample.length" class="sample">
           <summary>Preview newest {{ preview!.sample.length }}</summary>
           <ul>
@@ -274,6 +304,19 @@ header h2 { margin: 0.5rem 0 0.2rem; font-size: 1.25rem; overflow-wrap: anywhere
   background: var(--bg); border: 1px solid var(--border); color: var(--fg);
   border-radius: 8px; padding: 0.4rem 0.55rem; font-size: 0.85rem;
 }
+
+.quality-row { display: flex; flex-direction: column; gap: 0.45rem; padding: 0.6rem 0;
+               border-top: 1px solid var(--border); }
+.q-label { display: flex; align-items: center; gap: 0.6rem; font-size: 0.9rem; }
+.q-label select {
+  flex: 1; background: var(--bg); border: 1px solid var(--border); color: var(--fg);
+  border-radius: 8px; padding: 0.4rem 0.55rem; font-size: 0.85rem;
+}
+.q-custom {
+  background: var(--bg); border: 1px solid var(--border); color: var(--fg); border-radius: 8px;
+  padding: 0.4rem 0.55rem; font-size: 0.85rem; font-family: ui-monospace, monospace; width: 100%;
+}
+.q-hint { margin: 0; font-size: 0.78rem; color: var(--muted); }
 
 .sample { margin-top: 0.4rem; font-size: 0.85rem; }
 .sample summary { cursor: pointer; color: var(--muted); }

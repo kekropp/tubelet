@@ -27,8 +27,9 @@ function send(method: string, url: string, body?: unknown): Promise<Response> {
 }
 
 export const api = {
-  async intake(url: string, scope?: ScopeInput): Promise<IntakeResult> {
-    const resp = await post('/api/v1/intake', { url, scope })
+  // quality: a preset key (directplay|best|720p) or 'custom:<-f string>'; omit to follow the global setting.
+  async intake(url: string, scope?: ScopeInput, quality?: string): Promise<IntakeResult> {
+    const resp = await post('/api/v1/intake', { url, scope, quality })
     // 422 for unrecognized input still carries an IntakeResult body.
     if (resp.status === 422) return resp.json()
     return json<IntakeResult>(resp)

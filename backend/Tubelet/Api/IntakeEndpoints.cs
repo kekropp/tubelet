@@ -15,6 +15,10 @@ public static class IntakeEndpoints
             PipelineSignal signal, IntakeExpander expander) =>
         {
             var c = UrlClassifier.Classify(req.Url ?? "");
+            if (!FormatPresets.IsValidProfile(req.Quality))
+                return Results.BadRequest(
+                    new { error = "quality must be 'default', a preset (directplay|best|720p), or 'custom:<-f string>'" });
+            var quality = FormatPresets.Normalize(req.Quality);
             switch (c.Kind)
             {
                 case UrlKind.Unknown:
@@ -24,7 +28,7 @@ public static class IntakeEndpoints
                 case UrlKind.Video:
                 {
                     using var conn = db.Open();
-                    var enqueued = Queries.EnqueueJob(conn, c.Id!, priority: 1);
+                    var enqueued = Queries.EnqueueJob(conn, c.Id!, priority: 1, format: quality);
                     var status = enqueued ? "enqueued" : StatusForSkip(conn, c.Id!);
                     if (enqueued)
                     {
@@ -37,12 +41,12 @@ public static class IntakeEndpoints
                 }
 
                 case UrlKind.Playlist:
-                    expander.ExpandInBackground(UrlKind.Playlist, c.Id!, priority: 1, ScopeOf(req));
+                    expander.ExpandInBackground(UrlKind.Playlist, c.Id!, priority: 1, ScopeOf(req), quality);
                     return Results.Ok(new IntakeResult("playlist", c.Id, "expanding", [], []));
 
                 case UrlKind.Channel:
                 default:
-                    expander.ExpandInBackground(UrlKind.Channel, c.Id!, priority: 1, ScopeOf(req));
+                    expander.ExpandInBackground(UrlKind.Channel, c.Id!, priority: 1, ScopeOf(req), quality);
                     return Results.Ok(new IntakeResult("channel", c.Id, "expanding", [], []));
             }
         });

@@ -101,7 +101,7 @@ public sealed class SubscriptionScanner(
         using var conn = db.Open();
         if (kind == UrlKind.Playlist) Playlists.UpsertRegular(conn, sub.TargetId, listing);
 
-        var format = JobFormat(sub.QualityProf);
+        var format = FormatPresets.Normalize(sub.QualityProf);
         foreach (var e in listing.Entries)
         {
             if (enqueued >= filter.Cap) break;
@@ -143,10 +143,6 @@ public sealed class SubscriptionScanner(
                 """, new { d = listing.Description ?? "", t, b, tv, cid = listing.ChannelId });
         log.LogInformation("backfilled channel meta for {Channel}", listing.ChannelId);
     }
-
-    /// <summary>Job format stamp from a subscription's quality_prof; null = follow global settings.</summary>
-    public static string? JobFormat(string? qualityProf) =>
-        string.IsNullOrWhiteSpace(qualityProf) || qualityProf == "default" ? null : qualityProf;
 
     private IEnumerable<string> Args(SubscriptionRow sub, string url, int window)
     {

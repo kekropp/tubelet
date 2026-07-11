@@ -143,7 +143,7 @@ public static class SubscriptionEndpoints
             var kind = row.Kind == "playlist" ? UrlKind.Playlist : UrlKind.Channel;
             var s = scope is null ? IntakeScope.All : IntakeScope.From(scope.Mode, scope.N, scope.After);
             expander.ExpandInBackground(kind, row.TargetId, SubscriptionScanner.SubscriptionPriority, s,
-                SubscriptionScanner.JobFormat(row.QualityProf));
+                FormatPresets.Normalize(row.QualityProf));
             return Results.Accepted($"/api/v1/subscriptions/{id}");
         });
     }
